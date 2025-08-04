@@ -5,6 +5,9 @@ Mercator is a typst package to render GeoJSON as SVG in typst.
 ## Usage
 
 ````typst
+#import "@preview/mercator:0.1.0"
+
+#show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config, width: 400pt)
 
 // inline
 
@@ -15,10 +18,8 @@ Mercator is a typst package to render GeoJSON as SVG in typst.
   "fill_opacity": 0.5,
   "viewbox": array((10.0, -70.0, 15.0, 15.0))))
 
-#show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config, width: 400pt)
-
 ```geojson
-<GeoJSON string>
+<GeoJSON>
 ```
 
 // from file

@@ -31,19 +31,19 @@ cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.0/
 
 // from file
 
-#let sweden = read(
-  "swedish_regions.json",
+#let france = read(
+  "departements_fr.json",
   encoding: "utf8",
 )
 
-#let config2 = json.encode((
-  "stroke": "black",
-  "stroke_width": 0.05,
-  "fill": "red",
+#let config3 = json.encode((
+  "stroke": "red",
+  "stroke_width": 0.005,
+  "fill": "white",
   "fill_opacity": 0.5,
-  "viewbox": array((10.0, -70.0, 15.0, 15.0))))
+  "viewbox": array((-5.0, -54.0, 15.0, 14.6))))
 
-#figure(mercator.render-map(sweden, config2, height:400pt), caption: "Swedish regions")
+#figure(mercator.render-map(france, config3, width:550pt, height: 400pt), caption: "Départements français")
 ````
 
 # example
@@ -53,7 +53,7 @@ cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.0/
 typst compile mercator/example/example.typ
 ```
 
-Check the source of [example.typ](mercator/example/example.typ) & the result [swedish_regions.pdf](mercator/example/example.pdf).
+Check the source of [example.typ](mercator/example/example.typ) & the result [example.pdf](mercator/example/example.pdf).
 
 # todo 
 * also parse points and city labels
