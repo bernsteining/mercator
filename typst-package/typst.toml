@@ -2,9 +2,10 @@
 name = "mercator"
 version = "0.1.0"
 entrypoint = "mercator.typ"
-authors = ["Bernstein <https://gitea.tfnux.org/bernstein/> <https://github.com/bernsteining>"]
+authors = ["Bernstein <https://github.com/bernsteining>"]
 license = "Unlicense"
 description = "Render GeoJSON in typst."
-repository = "https://gitea.tfnux.org/bernstein/mercator/"
+repository = "https://github.com/bernsteining/mercator/"
 keywords = ["geojson", "map", "cartography", "vector tiles", "GIS"]
+categories = ["visualization"]
 compiler = "0.8.0"
