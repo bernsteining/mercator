@@ -41,7 +41,7 @@ Mercator is a typst package to render GeoJSON as SVG in typst.
 
 # example
 
-![](example/french_map.png)
+![french map](example/french_map.png)
 
 Check the source of [example.typ](example/example.typ) & the result [example.pdf](example/example.pdf).
 

@@ -48,10 +48,11 @@ cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.0/
 
 # example
 
-
 ```sh
 typst compile mercator/example/example.typ
 ```
+
+![french map](mercator/example/french_map.png)
 
 Check the source of [example.typ](mercator/example/example.typ) & the result [example.pdf](mercator/example/example.pdf).
 
