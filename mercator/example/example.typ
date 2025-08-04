@@ -52,3 +52,19 @@
   "viewbox": array((10.0, -70.0, 15.0, 15.0))))
 
 #figure(mercator.render-map(sweden, config2, height:400pt), caption: "Swedish regions")
+
+== big map
+
+#let france = read(
+  "departements_fr.json",
+  encoding: "utf8",
+)
+
+#let config3 = json.encode((
+  "stroke": "red",
+  "stroke_width": 0.005,
+  "fill": "white",
+  "fill_opacity": 0.5,
+  "viewbox": array((-5.0, -54.0, 15.0, 14.6))))
+
+#figure(mercator.render-map(france, config3, width:550pt, height: 400pt), caption: "Départements français")
