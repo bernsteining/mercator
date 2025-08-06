@@ -55,7 +55,3 @@ typst compile mercator/example/example.typ
 ![french map](mercator/example/french_map.png)
 
 Check the source of [example.typ](mercator/example/example.typ) & the result [example.pdf](mercator/example/example.pdf).
-
-# todo 
-* also parse points and city labels
-* auto compute viewbox from rust
