@@ -63,4 +63,4 @@ Check the source of [example.typ](mercator/examples/basic/example.typ) & the res
 * normal: `typst compile mercator/examples/france/all_france.typ  675.27s user 1.92s system 104% cpu 10:46.13 total`
 * basic opti with wasm-opt: `typst compile mercator/examples/france/all_france.typ  653.37s user 1.41s system 105% cpu 10:19.52 total`
 * rust side opti (2) + wasm-opt: `typst compile mercator/examples/france/all_france.typ  538.37s user 1.76s system 106% cpu 8:25.55 total`
-* rust (3) + wasm-opt: `typst compile mercator/examples/france/all_france.typ  523.40s user 1.66s system 107% cpu 8:09.52 total`
+* rust (3) + wasm-opt: `typst compile mercator/examples/france/all_france.typ  503.80s user 1.48s system 107% cpu 7:48.93 total`
