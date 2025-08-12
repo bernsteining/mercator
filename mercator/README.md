@@ -4,7 +4,7 @@ Mercator is a typst package to render GeoJSON in typst documents.
 
 # API 
 
-The [render-map(code, config, ..args)](mercator/mercator.typ) function has 2+ arguments:
+The [render-map(code, config, ..args)](mercator.typ) function has 2+ arguments:
 
 * code: GeoJSON data
 
@@ -12,15 +12,15 @@ The [render-map(code, config, ..args)](mercator/mercator.typ) function has 2+ ar
 
 ```json
 {
-  stroke: "black",
-  stroke_width: 0.05,
-  fill: "red",
-  fill_opacity: 0.5,
-  viewbox: None,
-  label_color: "black",
-  label_font_size: 0.3,
-  label_font_family: "Arial",
-  show_labels: true,
+  "stroke": "black",
+  "stroke_width": 0.05,
+  "fill": "red",
+  "fill_opacity": 0.5,
+  "viewbox": None,
+  "label_color": "black",
+  "label_font_size": 0.3,
+  "label_font_family": "Arial",
+  "show_labels": true
 }
 ```
 
@@ -43,6 +43,7 @@ NB: When `viewbox` is omitted or set to None, it is automatically computed via t
 You can also use it as follows:
 
 ````typst 
+#import "@preview/mercator:0.1.1"
 #show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config)
 
 ```geojson 
@@ -50,9 +51,11 @@ You can also use it as follows:
 ```
 ````
 
-# [examples](examples/)
+# [examples](https://github.com/bernsteining/mercator/tree/main/mercator/examples)
 
 ```typst
+#import "@preview/mercator:0.1.1"
+
 #let sweden = read(
   "swedish_regions.json",
   encoding: "utf8",
@@ -68,7 +71,7 @@ You can also use it as follows:
 #figure(mercator.render-map(sweden, config2, height:400pt), caption: "Swedish regions")
 ```
 
-![swedish map](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/swedish_regions.png)
+![swedish map](https://github.com/bernsteining/mercator/blob/main/mercator/examples/basic/swedish_regions.png)
 
 ````typst
 #import "@preview/mercator:0.1.1"
@@ -89,7 +92,7 @@ You can also use it as follows:
 
 ````
 
-![french map](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/french_map.png)
+![french map](https://github.com/bernsteining/mercator/blob/main/mercator/examples/basic/french_map.png)
 
 Check the source of [examples/basic/example.typ](example.typ) and its result [example.pdf](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/example.pdf).
 

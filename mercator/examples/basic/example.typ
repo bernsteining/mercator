@@ -1,5 +1,5 @@
 #import "@preview/slydst:0.1.4": *
-#import "@local/mercator:0.1.0"
+#import "@local/mercator:0.1.1"
 
 #let config = json.encode((
   "stroke": "black",

@@ -8,12 +8,13 @@ Mercator is a typst plugin to render GeoJSON as SVG in typst.
 cargo build --target wasm32-unknown-unknown --release 
 wasm-opt -O4 --enable-bulk-memory --strip-debug \
 target/wasm32-unknown-unknown/release/mercator.wasm -o mercator/mercator.wasm
-cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.0/
+cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.1/
 ```
 
 # usage
 
 ````typst
+#import "@preview/mercator:0.1.1"
 
 // inline
 
@@ -55,7 +56,7 @@ typst compile mercator/example/example.typ
 
 ![french map](mercator/examples/basic/french_map.png)
 
-Check the source of [example.typ](mercator/example/example.typ) & the result [example.pdf](mercator/example/example.pdf).
+Check the source of [example.typ](mercator/examples/basic/example.typ) & the result [example.pdf](mercator/examples/basic/example.pdf).
 
 # optimization benchmarks: 
 
