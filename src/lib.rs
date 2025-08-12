@@ -210,10 +210,10 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
                             .as_ref()
                             .and_then(|p| {
                                 p.get("name")
-                                    .or_else(|| p.get("nom")) // French
-                                    .or_else(|| p.get("NAME")) // Uppercase
-                                    .or_else(|| p.get("nombre")) // Spanish
-                                    .or_else(|| p.get("namn")) // Swedish
+                                    .or_else(|| p.get("nom")) 
+                                    .or_else(|| p.get("NAME")) 
+                                    .or_else(|| p.get("nombre")) 
+                                    .or_else(|| p.get("namn")) 
                                     .or_else(|| p.get("label"))
                             })
                             .and_then(|v| v.as_str())

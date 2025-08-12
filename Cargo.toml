@@ -16,10 +16,19 @@ serde = "1.0.219"
 serde_json = "1.0"
 svg = "0.18"
 
-
 [profile.release]
-lto = true          # Enable link-time optimization
-strip = true        # Strip symbols from binary*
-opt-level = 'z'     # Optimize for size
-codegen-units = 1   # Reduce number of codegen units to increase optimizations
-panic = 'abort'     # Abort on panic
+lto = "fat"             
+strip = true        
+opt-level = 3 
+codegen-units = 1   
+panic = 'abort'     
+debug = false             
+debug-assertions = false  
+overflow-checks = false   
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "target-feature=+simd128",
+    "-C", "target-feature=+bulk-memory",
+    "-C", "target-feature=+sign-ext"
+]

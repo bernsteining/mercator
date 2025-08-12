@@ -2,44 +2,6 @@
 
 Mercator is a typst package to render GeoJSON in typst documents.
 
-## Usage
-
-````typst
-#import "@preview/mercator:0.1.0"
-
-#show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config, width: 400pt)
-
-// inline
-
-#let config = json.encode((
-  "stroke": "black",
-  "stroke_width": 0.02,
-  "fill": "green",
-  "fill_opacity": 0.5,
-  "viewbox": array((10.0, -70.0, 15.0, 15.0))))
-
-```geojson
-<GeoJSON>
-```
-
-// from file
-
-#let france = read(
-  "departements_fr.json",
-  encoding: "utf8",
-)
-
-#let config3 = json.encode((
-  "stroke": "red",
-  "stroke_width": 0.005,
-  "fill": "white",
-  "fill_opacity": 0.5,
-  show_labels: false))
-
-#figure(mercator.render-map(france, config3, width:550pt, height: 400pt), caption: "Départements français")
-
-````
-
 # API 
 
 The [render-map(code, config, ..args)](mercator/mercator.typ) function has 2+ arguments:
@@ -62,15 +24,74 @@ The [render-map(code, config, ..args)](mercator/mercator.typ) function has 2+ ar
 }
 ```
 
-These are the default config values, `viewbox`, `label_color`, `label_font_size`, `label_font_family`, `show_labels` fields are Optional and can be omitted in the config.
+These are the default config values. 
 
-NB: When `viewbox` is omitted or set to None, it is automatically computed via the GeoJSON coordinates to render the whole map.
+* `viewbox`
+* `label_color` 
+* `label_font_size`
+* `label_font_family`
+* `show_labels` 
+
+fields are Optional and can be omitted in the config.
+
+NB: When `viewbox` is omitted or set to None, it is automatically computed via the GeoJSON coordinates to render the whole map in the canvas.
 
 * ..args: Remaining arguments passed to [image.decode](https://typst.app/docs/reference/visualize/image/)
 
-# example
+---
 
-![french map](example/french_map.png)
+You can also use it as follows:
 
-Check the source of [example.typ](example/example.typ) & the result [example.pdf](example/example.pdf).
+````typst 
+#show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config)
+
+```geojson 
+<your geojson code here>
+```
+````
+
+# [examples](examples/)
+
+```typst
+#let sweden = read(
+  "swedish_regions.json",
+  encoding: "utf8",
+)
+
+#let config = json.encode((
+  "stroke": "black",
+  "stroke_width": 0.02,
+  "fill": "green",
+  "fill_opacity": 0.5,
+  "viewbox": array((15.0, -73.4, 10.0, 10.0))))
+
+#figure(mercator.render-map(sweden, config2, height:400pt), caption: "Swedish regions")
+```
+
+![swedish map](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/swedish_regions.png)
+
+````typst
+#import "@preview/mercator:0.1.1"
+
+#let france = read(
+  "departements_fr.json",
+  encoding: "utf8",
+)
+
+#let config3 = json.encode((
+  "stroke": "red",
+  "stroke_width": 0.005,
+  "fill": "white",
+  "fill_opacity": 0.5,
+  show_labels: false))
+
+#figure(mercator.render-map(france, config3, width:550pt, height: 400pt), caption: "Départements français")
+
+````
+
+![french map](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/french_map.png)
+
+Check the source of [examples/basic/example.typ](example.typ) and its result [example.pdf](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/example.pdf).
+
+Another [example](https://github.com/bernsteining/mercator/tree/main/mercator/examples/france/all_france.pdf) showcases the rendering of 403 maps in one shot.
 
