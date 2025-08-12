@@ -16,7 +16,7 @@ The [render-map(code, config, ..args)](mercator.typ) function has 2+ arguments:
   "stroke_width": 0.05,
   "fill": "red",
   "fill_opacity": 0.5,
-  "viewbox": None,
+  "viewbox": null,
   "label_color": "black",
   "label_font_size": 0.3,
   "label_font_family": "Arial",
@@ -94,7 +94,7 @@ You can also use it as follows:
 
 ![french map](https://github.com/bernsteining/mercator/blob/main/mercator/examples/basic/french_map.png)
 
-Check the source of [examples/basic/example.typ](example.typ) and its result [example.pdf](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/example.pdf).
+Check the source of [examples/basic/example.typ](https://github.com/bernsteining/mercator/blob/main/mercator/examples/basic/example.typ) and its result [example.pdf](https://github.com/bernsteining/mercator/tree/main/mercator/examples/basic/example.pdf).
 
 Another [example](https://github.com/bernsteining/mercator/tree/main/mercator/examples/france/all_france.pdf) showcases the rendering of 403 maps in one shot.
 
