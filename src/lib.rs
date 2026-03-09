@@ -1,163 +1,308 @@
+/// Mercator: Rendering GeoJSON to SVG in a WASM plugin.
+
+mod geometry;
+mod style;
+
 use wasm_minimal_protocol::*;
 
-use geojson::{GeoJson, Geometry, Value};
-use svg::node::element::{path::Data, Path, Text};
+use geojson::GeoJson;
+use svg::node::element::{Circle, Definitions, Group, Line, Path, Pattern, Text};
 use svg::Document;
 
-use serde::Deserialize;
+use std::collections::HashMap;
+
+use geometry::{compute_viewbox, first_altitude, geometry_centroid, render_geometry, RenderOutput};
+use style::{
+    interpolate_template, resolve_style, LabelConfig, LabelInstance, ResolvedStyle, StyleConfig,
+};
 
 initiate_protocol!();
 
-#[derive(Debug, Deserialize)]
-struct StyleConfig {
-    stroke: String,
-    stroke_width: f64,
-    fill: String,
-    fill_opacity: f64,
-    viewbox: Option<(f64, f64, f64, f64)>,
-    label_color: Option<String>,
-    label_font_size: Option<f64>,
-    label_font_family: Option<String>,
-    show_labels: Option<bool>,
+struct PatternDefs {
+    patterns: HashMap<(String, String), String>,
+    defs: Definitions,
+    counter: usize,
 }
 
-impl Default for StyleConfig {
-    fn default() -> Self {
+impl PatternDefs {
+    fn new() -> Self {
         Self {
-            stroke: "black".to_string(),
-            stroke_width: 0.05,
-            fill: "red".to_string(),
-            fill_opacity: 0.5,
-            viewbox: None,
-            label_color: Some("black".to_string()),
-            label_font_size: Some(0.3),
-            label_font_family: Some("Arial".to_string()),
-            show_labels: Some(true),
+            patterns: HashMap::new(),
+            defs: Definitions::new(),
+            counter: 0,
         }
     }
-}
 
-fn calculate_centroid(coords: &[Vec<Vec<f64>>]) -> (f64, f64) {
-    let mut total_x = 0.0;
-    let mut total_y = 0.0;
-    let mut count = 0;
+    fn get_or_create(&mut self, pattern_type: &str, color: &str, stroke_width: f64) -> String {
+        let key = (pattern_type.to_string(), color.to_string());
+        if let Some(id) = self.patterns.get(&key) {
+            return id.clone();
+        }
 
-    if let Some(outer_ring) = coords.first() {
-        for coord in outer_ring {
-            if coord.len() >= 2 {
-                total_x += coord[0];
-                total_y += coord[1];
-                count += 1;
+        let id = format!("pat-{}", self.counter);
+        self.counter += 1;
+
+        let cell = ((stroke_width * 3.0).max(0.08) * 1000.0).round() / 1000.0;
+        let line_w = (cell * 0.3 * 1000.0).round() / 1000.0;
+
+        let pattern = match pattern_type {
+            "hatched" => Pattern::new()
+                .set("id", &*id)
+                .set("patternUnits", "userSpaceOnUse")
+                .set("width", cell)
+                .set("height", cell)
+                .set("patternTransform", "rotate(45)")
+                .add(
+                    Line::new()
+                        .set("x1", 0)
+                        .set("y1", 0)
+                        .set("x2", 0)
+                        .set("y2", cell)
+                        .set("stroke", color)
+                        .set("stroke-width", line_w),
+                ),
+            "crosshatched" => Pattern::new()
+                .set("id", &*id)
+                .set("patternUnits", "userSpaceOnUse")
+                .set("width", cell)
+                .set("height", cell)
+                .set("patternTransform", "rotate(45)")
+                .add(
+                    Line::new()
+                        .set("x1", 0)
+                        .set("y1", 0)
+                        .set("x2", 0)
+                        .set("y2", cell)
+                        .set("stroke", color)
+                        .set("stroke-width", line_w),
+                )
+                .add(
+                    Line::new()
+                        .set("x1", 0)
+                        .set("y1", 0)
+                        .set("x2", cell)
+                        .set("y2", 0)
+                        .set("stroke", color)
+                        .set("stroke-width", line_w),
+                ),
+            "dotted" => {
+                let r = cell * 0.2;
+                Pattern::new()
+                    .set("id", &*id)
+                    .set("patternUnits", "userSpaceOnUse")
+                    .set("width", cell)
+                    .set("height", cell)
+                    .add(
+                        Circle::new()
+                            .set("cx", cell / 2.0)
+                            .set("cy", cell / 2.0)
+                            .set("r", r)
+                            .set("fill", color),
+                    )
             }
-        }
+            _ => Pattern::new()
+                .set("id", &*id)
+                .set("patternUnits", "userSpaceOnUse")
+                .set("width", cell)
+                .set("height", cell),
+        };
+
+        self.defs = std::mem::replace(&mut self.defs, Definitions::new()).add(pattern);
+        self.patterns.insert(key, id.clone());
+        id
     }
 
-    if count > 0 {
-        (total_x / count as f64, total_y / count as f64)
-    } else {
-        (0.0, 0.0)
+    fn has_patterns(&self) -> bool {
+        !self.patterns.is_empty()
     }
 }
 
-fn add_label(doc: Document, x: f64, y: f64, name: &str, config: &StyleConfig) -> Document {
-    if !config.show_labels.unwrap_or(true) {
-        return doc;
-    }
-
-    let color = config.label_color.as_deref().unwrap_or("black");
-    let font_size = config.label_font_size.unwrap_or(0.3);
-    let font_family = config.label_font_family.as_deref().unwrap_or("Arial");
-
+fn add_label(doc: Document, label: &LabelInstance) -> Document {
     doc.add(
-        Text::new(name)
-            .set("x", x)
-            .set("y", -y)
-            .set("font-size", font_size)
-            .set("font-family", font_family)
-            .set("fill", color)
+        Text::new(&*label.text)
+            .set("x", label.x)
+            .set("y", -label.y)
+            .set("font-size", label.font_size)
+            .set("font-family", &*label.font_family)
+            .set("fill", &*label.color)
             .set("text-anchor", "middle")
             .set("dominant-baseline", "middle"),
     )
 }
 
-fn doc_from_config(data: Data, config: &StyleConfig) -> Document {
-    let viewbox = config.viewbox.unwrap_or((0.0, 0.0, 100.0, 100.0));
-    Document::new().set("viewBox", viewbox).add(
-        Path::new()
-            .set("fill", &*config.fill)
-            .set("fill-opacity", config.fill_opacity)
-            .set("stroke", &*config.stroke)
-            .set("stroke-width", config.stroke_width)
-            .set("d", data),
-    )
-}
-
-fn draw_polygon(data: Data, coords: &[Vec<Vec<f64>>]) -> Data {
-    coords.iter().fold(data, |mut d, ring| {
-        let mut points = ring.iter();
-        if let Some(p0) = points.next() {
-            d = d.move_to((p0[0], -p0[1]));
-            for p in points {
-                d = d.line_to((p[0], -p[1]));
-            }
-            d.close()
-        } else {
-            d
-        }
-    })
-}
-
-pub fn compute_viewbox(geojson: &GeoJson) -> (f64, f64, f64, f64) {
-    let mut bounds = [
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-    ];
-
-    let mut update = |coord: &[f64]| {
-        if coord.len() >= 2 {
-            bounds[0] = bounds[0].min(coord[0]);
-            bounds[1] = bounds[1].max(coord[0]);
-            bounds[2] = bounds[2].min(coord[1]);
-            bounds[3] = bounds[3].max(coord[1]);
-        }
+fn render_feature(
+    group: Group,
+    feat: &geojson::Feature,
+    labels: &mut Vec<LabelInstance>,
+    config: &StyleConfig,
+    patterns: &mut PatternDefs,
+) -> Group {
+    let geom = match feat.geometry.as_ref() {
+        Some(g) => g,
+        None => return group,
     };
 
-    fn process_value(value: &Value, update: &mut dyn FnMut(&[f64])) {
-        match value {
-            Value::Point(c) => update(c),
-            Value::LineString(cs) | Value::MultiPoint(cs) => cs.iter().for_each(|c| update(c)),
-            Value::Polygon(rs) | Value::MultiLineString(rs) => {
-                rs.iter().flatten().for_each(|c| update(c))
+    // Build augmented properties including Feature id and coordinate altitude
+    let properties = {
+        let mut props = feat.properties.clone().unwrap_or_default();
+        if let Some(ref id) = feat.id {
+            match id {
+                geojson::feature::Id::String(s) => {
+                    props.entry("id".to_string()).or_insert(serde_json::Value::String(s.clone()));
+                }
+                geojson::feature::Id::Number(n) => {
+                    props.entry("id".to_string()).or_insert(serde_json::Value::Number(n.clone()));
+                }
             }
-            Value::MultiPolygon(ps) => ps.iter().flatten().flatten().for_each(|c| update(c)),
-            Value::GeometryCollection(gs) => {
-                gs.iter().for_each(|g| process_value(&g.value, update))
+        }
+        if let Some(alt) = first_altitude(&geom.value) {
+            props.entry("altitude".to_string()).or_insert(
+                serde_json::Number::from_f64(alt)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
+            );
+        }
+        props
+    };
+    let properties_ref = Some(&properties);
+    let style = resolve_style(config, properties_ref);
+
+    let mut out = RenderOutput::default();
+    render_geometry(&mut out, &geom.value);
+    let group = add_geometry_to_group(group, out, &style, patterns);
+
+    let label_config = match &config.label {
+        Some(lc) => lc,
+        None => return group,
+    };
+
+    let (cx, cy) = match geometry_centroid(&geom.value) {
+        Some(c) => c,
+        None => return group,
+    };
+
+    let default_font_size = config.label_font_size.unwrap_or(0.3);
+    let default_color = config.label_color.as_deref().unwrap_or("black");
+    let default_font_family = config.label_font_family.as_deref().unwrap_or("Arial");
+
+    match label_config {
+        LabelConfig::Simple(template) => {
+            if let Some(text) = interpolate_template(template, &properties) {
+                labels.push(LabelInstance {
+                    x: cx,
+                    y: cy,
+                    text,
+                    font_size: default_font_size,
+                    color: default_color.to_string(),
+                    font_family: default_font_family.to_string(),
+                });
+            }
+        }
+        LabelConfig::Multi(lines) => {
+            let total_lines = lines.len();
+            for (i, line) in lines.iter().enumerate() {
+                if let Some(text) = interpolate_template(&line.text, &properties) {
+                    let fs = line.font_size.unwrap_or(default_font_size);
+                    let offset = (i as f64 - (total_lines as f64 - 1.0) / 2.0) * fs * 1.2;
+                    labels.push(LabelInstance {
+                        x: cx,
+                        y: cy - offset,
+                        text,
+                        font_size: fs,
+                        color: line
+                            .color
+                            .as_deref()
+                            .unwrap_or(default_color)
+                            .to_string(),
+                        font_family: line
+                            .font_family
+                            .as_deref()
+                            .unwrap_or(default_font_family)
+                            .to_string(),
+                    });
+                }
             }
         }
     }
 
-    match geojson {
-        GeoJson::FeatureCollection(fc) => {
-            fc.features
-                .iter()
-                .filter_map(|f| f.geometry.as_ref())
-                .for_each(|g| process_value(&g.value, &mut update));
-        }
-        GeoJson::Geometry(g) => process_value(&g.value, &mut update),
-        _ => {}
+    group
+}
+
+fn resolve_fill(style: &ResolvedStyle, patterns: &mut PatternDefs) -> String {
+    if let Some(ref pat) = style.fill_pattern {
+        let id = patterns.get_or_create(pat, &style.fill, style.stroke_width);
+        format!("url(#{})", id)
+    } else {
+        style.fill.clone()
+    }
+}
+
+fn add_geometry_to_group(
+    mut group: Group,
+    out: RenderOutput,
+    style: &ResolvedStyle,
+    patterns: &mut PatternDefs,
+) -> Group {
+    if !out.polygon_data.is_empty() {
+        let fill = resolve_fill(style, patterns);
+        group = group.add(
+            Path::new()
+                .set("fill", &*fill)
+                .set("fill-opacity", style.fill_opacity)
+                .set("stroke", &*style.stroke)
+                .set("stroke-width", style.stroke_width)
+                .set("d", out.polygon_data),
+        );
     }
 
-    if bounds[0] == f64::INFINITY {
-        return (0.0, 0.0, 100.0, 100.0);
+    if !out.line_data.is_empty() {
+        group = group.add(
+            Path::new()
+                .set("fill", "none")
+                .set("stroke", &*style.stroke)
+                .set("stroke-width", style.stroke_width)
+                .set("d", out.line_data),
+        );
     }
 
-    let (w, h) = (bounds[1] - bounds[0], bounds[3] - bounds[2]);
-    let (px, py) = (w * 0.1, h * 0.1);
-    let (fw, fh) = ((w + 2.0 * px).max(1.0), (h + 2.0 * py).max(1.0));
+    for (x, y) in &out.points {
+        let fill = resolve_fill(style, patterns);
+        group = group.add(
+            Circle::new()
+                .set("cx", *x)
+                .set("cy", -*y)
+                .set("r", style.point_radius)
+                .set("fill", &*fill)
+                .set("fill-opacity", style.fill_opacity)
+                .set("stroke", &*style.stroke)
+                .set("stroke-width", style.stroke_width),
+        );
+    }
 
-    (bounds[0] - px, -(bounds[3] + py), fw, fh)
+    group
+}
+
+fn try_topojson(content: &str) -> Result<GeoJson, String> {
+    let topo: topojson::Topology =
+        serde_json::from_str(content).map_err(|e| format!("Not valid GeoJSON or TopoJSON: {e}"))?;
+
+    // Pick the object with the most geometries to avoid merging
+    // duplicate layers (e.g. "countries" + "land" in world-atlas files).
+    let best = topo
+        .objects
+        .iter()
+        .max_by_key(|ng| match &ng.geometry.value {
+            topojson::Value::GeometryCollection(geoms) => geoms.len(),
+            _ => 1,
+        })
+        .ok_or_else(|| "TopoJSON has no named objects".to_string())?;
+
+    let fc = topojson::to_geojson(&topo, &best.name).map_err(|e| e.to_string())?;
+    Ok(GeoJson::FeatureCollection(geojson::FeatureCollection {
+        bbox: None,
+        features: fc.features,
+        foreign_members: None,
+    }))
 }
 
 #[wasm_func]
@@ -170,69 +315,48 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     };
 
     let content = String::from_utf8(geojson.to_vec()).map_err(|e| e.to_string())?;
-    let geojson = content.parse::<GeoJson>().map_err(|e| e.to_string())?;
+    let geojson = match content.parse::<GeoJson>() {
+        Ok(gj) => gj,
+        Err(_) => try_topojson(&content)?,
+    };
 
     if conf.viewbox.is_none() {
-        conf.viewbox = Some(compute_viewbox(&geojson));
+        let padding = conf.viewbox_padding.unwrap_or(0.1);
+        conf.viewbox = Some(compute_viewbox(&geojson, padding));
     }
 
-    let mut data = Data::new();
-    let mut labels: Vec<(f64, f64, String)> = Vec::new();
+    let viewbox = conf.viewbox.unwrap_or((0.0, 0.0, 100.0, 100.0));
+    let mut doc = Document::new().set("viewBox", viewbox);
+    let mut group = Group::new();
+    let mut labels: Vec<LabelInstance> = Vec::new();
+    let mut patterns = PatternDefs::new();
 
-    if let GeoJson::FeatureCollection(fc) = geojson {
-        for feat in fc.features {
-            if let Some(Geometry { value, .. }) = feat.geometry {
-                match value {
-                    Value::Polygon(ref poly) => {
-                        data = draw_polygon(data, poly);
-
-                        if let Some(name) = feat
-                            .properties
-                            .as_ref()
-                            .and_then(|p| {
-                                p.get("name")
-                                    .or_else(|| p.get("nom"))
-                                    .or_else(|| p.get("NAME"))
-                                    .or_else(|| p.get("nombre"))
-                                    .or_else(|| p.get("namn"))
-                                    .or_else(|| p.get("label"))
-                            })
-                            .and_then(|v| v.as_str())
-                        {
-                            let (cx, cy) = calculate_centroid(poly);
-                            labels.push((cx, cy, name.to_string()));
-                        }
-                    }
-                    Value::MultiPolygon(ref polys) => {
-                        data = polys.iter().fold(data, |d, poly| draw_polygon(d, poly));
-                        if let Some(name) = feat
-                            .properties
-                            .as_ref()
-                            .and_then(|p| {
-                                p.get("name")
-                                    .or_else(|| p.get("nom")) 
-                                    .or_else(|| p.get("NAME")) 
-                                    .or_else(|| p.get("nombre")) 
-                                    .or_else(|| p.get("namn")) 
-                                    .or_else(|| p.get("label"))
-                            })
-                            .and_then(|v| v.as_str())
-                        {
-                            if let Some(first_poly) = polys.first() {
-                                let (cx, cy) = calculate_centroid(first_poly);
-                                labels.push((cx, cy, name.to_string()));
-                            }
-                        }
-                    }
-                    _ => (),
-                };
+    match geojson {
+        GeoJson::FeatureCollection(fc) => {
+            for feat in &fc.features {
+                group = render_feature(group, feat, &mut labels, &conf, &mut patterns);
             }
+        }
+        GeoJson::Feature(ref feat) => {
+            group = render_feature(group, feat, &mut labels, &conf, &mut patterns);
+        }
+        GeoJson::Geometry(ref geom) => {
+            let style = resolve_style(&conf, None);
+            let mut out = RenderOutput::default();
+            render_geometry(&mut out, &geom.value);
+            group = add_geometry_to_group(group, out, &style, &mut patterns);
         }
     }
 
-    let mut doc = doc_from_config(data, &conf);
-    for (x, y, name) in &labels {
-        doc = add_label(doc, *x, *y, name, &conf);
+    // Add defs before geometry so pattern references resolve correctly
+    if patterns.has_patterns() {
+        doc = doc.add(patterns.defs);
+    }
+
+    doc = doc.add(group);
+
+    for label in &labels {
+        doc = add_label(doc, label);
     }
     let mut buf = Vec::new();
     svg::write(&mut buf, &doc).map_err(|e| e.to_string())?;

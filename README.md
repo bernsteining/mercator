@@ -5,62 +5,71 @@ Mercator is a typst plugin to render GeoJSON as SVG in typst.
 # build locally
 
 ```sh
-cargo build --target wasm32-unknown-unknown --release 
+cargo build --target wasm32-unknown-unknown --release
 wasm-opt -O4 --enable-bulk-memory --strip-debug \
 target/wasm32-unknown-unknown/release/mercator.wasm -o mercator/mercator.wasm
-cp -r mercator/* ~/.local/share/typst/packages/local/mercator/0.1.1/
 ```
 
 # usage
 
-````typst
-#import "@preview/mercator:0.1.1"
+```sh
+#import "@preview/mercator:0.1.2"
 
-// inline
+#let sweden = read("data/swedish_regions.json", encoding: "utf8")
 
+#let sweden_config = json.encode((
+  stroke: "white",
+  stroke_width: 0.03,
+  fill: "steelblue",
+  fill_opacity: 0.8,
+  label: "{name}",
+  label_color: "black",
+  label_font_size: 0.25,
+))
+
+render-map(sweden, sweden_config, width: 80%)
+```
+
+Produces:
+
+![sweden](examples/data/sweden.png)
+
+# config options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `stroke` | string | `"black"` | Stroke color. Use `{property_name}` to read from each feature's GeoJSON properties (see [per-feature styling](#per-feature-styling)). |
+| `stroke_width` | float | `0.05` | Stroke width |
+| `fill` | string | `"red"` | Fill color. Use `{property_name}` to read from each feature's GeoJSON properties (see [per-feature styling](#per-feature-styling)). |
+| `fill_opacity` | float | `0.5` | Fill opacity |
+| `viewbox` | array | auto | Viewbox as `(x, y, width, height)`. Auto-computed from GeoJSON bounds if omitted. |
+| `viewbox_padding` | float | `0.1` | Padding around auto-computed viewbox (as fraction of width/height). Only used when `viewbox` is not set. |
+| `label` | string or array | none | Label template. Simple: `"{name}"`. Multi-line: `[{"text": "{name}", "font_size": 0.4}, {"text": "{code}", "font_size": 0.2}]` |
+| `label_color` | string | `"black"` | Default label color |
+| `label_font_size` | float | `0.3` | Default label font size |
+| `label_font_family` | string | `"Arial"` | Default label font family |
+| `fill_pattern` | string | none | Fill pattern: `"hatched"`, `"crosshatched"`, or `"dotted"`. Uses `fill` color for the pattern. Supports `{property_name}` interpolation. |
+| `point_radius` | float | `stroke_width * 5` | Radius for Point/MultiPoint geometries |
+
+## per-feature styling
+
+Use `{property_name}` in `fill` or `stroke` to resolve values from each feature's GeoJSON properties:
+
+```typst
 #let config = json.encode((
   "stroke": "black",
   "stroke_width": 0.02,
-  "fill": "green",
-  "fill_opacity": 0.5,
-  "viewbox": array((10.0, -70.0, 5.0, 5.0))))
-
-#show raw.where(lang: "geojson"): it => mercator.render-map(it.text, config, width: 400pt)
-
-```geojson
-<GeoJSON string>
+  "fill": "{fill_color}",
+  "fill_opacity": 0.6,
+  "label": "{name}"))
 ```
 
-// from file
-
-#let france = read(
-  "departements_fr.json",
-  encoding: "utf8",
-)
-
-#let config3 = json.encode((
-  "stroke": "red",
-  "stroke_width": 0.005,
-  "fill": "white",
-  "fill_opacity": 0.5,
-  "viewbox": array((-5.0, -54.0, 15.0, 14.6))))
-
-#figure(mercator.render-map(france, config3, width:550pt, height: 400pt), caption: "Départements français")
-````
+If a feature is missing the referenced property, the fill falls back to `"none"` and the stroke falls back to `"black"`.
 
 # example
 
 ```sh
-typst compile mercator/example/example.typ
+typst compile --root . examples/example.typ
 ```
 
-![french map](mercator/examples/basic/french_map.png)
-
-Check the source of [example.typ](mercator/examples/basic/example.typ) & the result [example.pdf](mercator/examples/basic/example.pdf).
-
-# optimization benchmarks: 
-
-* normal: `typst compile mercator/examples/france/all_france.typ  675.27s user 1.92s system 104% cpu 10:46.13 total`
-* basic opti with wasm-opt: `typst compile mercator/examples/france/all_france.typ  653.37s user 1.41s system 105% cpu 10:19.52 total`
-* rust side opti (2) + wasm-opt: `typst compile mercator/examples/france/all_france.typ  538.37s user 1.76s system 106% cpu 8:25.55 total`
-* rust (3) + wasm-opt: `typst compile mercator/examples/france/all_france.typ  503.80s user 1.48s system 107% cpu 7:48.93 total`
+Check the source of [example.typ](examples/example.typ) and its result [example.pdf](examples/example.pdf).

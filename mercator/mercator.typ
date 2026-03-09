@@ -12,11 +12,11 @@
   return str(mercator.geo(bytes(code), bytes(config)))
 }
 
-/// Renders a GeoJSON and returns an image for it. Uses the same parameters as image.decode.
+/// Renders a GeoJSON and returns an image for it. Uses the same parameters as image.
 ///
 /// - code (string, bytes): GeoJSON to be rendered.
-/// - all remaining arguments: see image.decode
+/// - all remaining arguments: see image
 /// -> content
 #let render-map(code, config, ..args) = {
-  image.decode(render(code, config), format: "svg", ..args)
+  image(bytes(render(code, config)), format: "svg", ..args)
 }
