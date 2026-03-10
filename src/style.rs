@@ -1,3 +1,4 @@
+use crate::projection::ProjectionConfig;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -22,13 +23,23 @@ pub struct LabelInstance {
     pub font_size: f64,
     pub color: String,
     pub font_family: String,
+    pub anchor: &'static str,
 }
+
+fn default_stroke() -> String { "black".to_string() }
+fn default_stroke_width() -> f64 { 0.05 }
+fn default_fill() -> String { "red".to_string() }
+fn default_fill_opacity() -> f64 { 0.5 }
 
 #[derive(Debug, Deserialize)]
 pub struct StyleConfig {
+    #[serde(default = "default_stroke")]
     pub stroke: String,
+    #[serde(default = "default_stroke_width")]
     pub stroke_width: f64,
+    #[serde(default = "default_fill")]
     pub fill: String,
+    #[serde(default = "default_fill_opacity")]
     pub fill_opacity: f64,
     pub viewbox: Option<(f64, f64, f64, f64)>,
     pub viewbox_padding: Option<f64>,
@@ -37,8 +48,28 @@ pub struct StyleConfig {
     pub label_font_family: Option<String>,
     pub label: Option<LabelConfig>,
     pub point_radius: Option<f64>,
+    pub point_color: Option<String>,
     pub fill_pattern: Option<String>,
+    pub projection: Option<ProjectionConfig>,
+    pub graticule: Option<GraticuleConfig>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct GraticuleConfig {
+    #[serde(default = "default_graticule_step")]
+    pub step: f64,
+    #[serde(default = "default_graticule_color")]
+    pub color: String,
+    #[serde(default = "default_graticule_width")]
+    pub width: f64,
+    #[serde(default = "default_graticule_opacity")]
+    pub opacity: f64,
+}
+
+fn default_graticule_step() -> f64 { 15.0 }
+fn default_graticule_color() -> String { "#ccc".to_string() }
+fn default_graticule_width() -> f64 { 0.5 }
+fn default_graticule_opacity() -> f64 { 0.6 }
 
 impl Default for StyleConfig {
     fn default() -> Self {
@@ -54,7 +85,10 @@ impl Default for StyleConfig {
             label_font_family: Some("Arial".to_string()),
             label: None,
             point_radius: None,
+            point_color: None,
             fill_pattern: None,
+            projection: None,
+            graticule: None,
         }
     }
 }
@@ -65,6 +99,7 @@ pub struct ResolvedStyle {
     pub fill: String,
     pub fill_opacity: f64,
     pub point_radius: f64,
+    pub point_color: Option<String>,
     pub fill_pattern: Option<String>,
 }
 
@@ -92,12 +127,17 @@ pub fn resolve_style(
         if resolved.is_empty() { None } else { Some(resolved) }
     });
 
+    let point_color = config.point_color.as_ref().map(|template| {
+        resolve(template, "none")
+    });
+
     ResolvedStyle {
         stroke: resolve(&config.stroke, "black"),
         stroke_width: config.stroke_width,
         fill: resolve(&config.fill, "none"),
         fill_opacity: config.fill_opacity,
         point_radius: config.point_radius.unwrap_or(config.stroke_width * 5.0),
+        point_color,
         fill_pattern,
     }
 }

@@ -15,8 +15,10 @@
 /// Renders a GeoJSON and returns an image for it. Uses the same parameters as image.
 ///
 /// - code (string, bytes): GeoJSON to be rendered.
+/// - config (string): JSON-encoded configuration string. Optional, defaults to `"{}"`.
 /// - all remaining arguments: see image
 /// -> content
-#let render-map(code, config, ..args) = {
-  image(bytes(render(code, config)), format: "svg", ..args)
+#let render-map(code, ..args) = {
+  let config = args.pos().at(0, default: "{}")
+  image(bytes(render(code, config)), format: "svg", ..args.named())
 }

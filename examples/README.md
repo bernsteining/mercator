@@ -1,11 +1,11 @@
-# Examples
+# Documentation
 
-An example showcasing all the different possibilities of how to use mercator.
+Comprehensive documentation showcasing all features of the mercator plugin.
 
-Compile with: 
+Compile with:
 
 ```sh
-typst compile --root .. example.typ
+typst compile --root .. documentation.typ
 ```
 
-Which produces `example.pdf`
+Which produces `documentation.pdf`

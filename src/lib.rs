@@ -1,6 +1,7 @@
 /// Mercator: Rendering GeoJSON to SVG in a WASM plugin.
 
 mod geometry;
+mod projection;
 mod style;
 
 use wasm_minimal_protocol::*;
@@ -11,12 +12,37 @@ use svg::Document;
 
 use std::collections::HashMap;
 
-use geometry::{compute_viewbox, first_altitude, geometry_centroid, render_geometry, RenderOutput};
+use geometry::{
+    compute_viewbox, first_altitude, geometry_centroid, render_geometry, PathBuilder, RenderOutput,
+};
+use projection::{project_geojson, CompiledProjection};
 use style::{
-    interpolate_template, resolve_style, LabelConfig, LabelInstance, ResolvedStyle, StyleConfig,
+    interpolate_template, resolve_style, GraticuleConfig, LabelConfig, LabelInstance,
+    ResolvedStyle, StyleConfig,
 };
 
 initiate_protocol!();
+
+// Pattern fill constants
+const PATTERN_CELL_MULTIPLIER: f64 = 3.0;
+const PATTERN_CELL_MIN: f64 = 0.08;
+const PATTERN_LINE_WIDTH_RATIO: f64 = 0.3;
+const PATTERN_DOT_RADIUS_RATIO: f64 = 0.2;
+
+// Label layout constants
+const DEFAULT_LABEL_FONT_SIZE: f64 = 0.3;
+const LABEL_LINE_SPACING: f64 = 1.2;
+
+// Viewbox defaults
+const DEFAULT_VIEWBOX_PADDING: f64 = 0.1;
+const FALLBACK_VIEWBOX: (f64, f64, f64, f64) = (0.0, 0.0, 100.0, 100.0);
+
+// Graticule rendering
+const GRATICULE_SEGMENTS: usize = 90;
+const GRATICULE_WIDTH_SCALE: f64 = 1000.0;
+
+// SVG rounding precision (3 decimal places)
+const SVG_ROUND_FACTOR: f64 = 1000.0;
 
 struct PatternDefs {
     patterns: HashMap<(String, String), String>,
@@ -42,8 +68,8 @@ impl PatternDefs {
         let id = format!("pat-{}", self.counter);
         self.counter += 1;
 
-        let cell = ((stroke_width * 3.0).max(0.08) * 1000.0).round() / 1000.0;
-        let line_w = (cell * 0.3 * 1000.0).round() / 1000.0;
+        let cell = ((stroke_width * PATTERN_CELL_MULTIPLIER).max(PATTERN_CELL_MIN) * SVG_ROUND_FACTOR).round() / SVG_ROUND_FACTOR;
+        let line_w = (cell * PATTERN_LINE_WIDTH_RATIO * SVG_ROUND_FACTOR).round() / SVG_ROUND_FACTOR;
 
         let pattern = match pattern_type {
             "hatched" => Pattern::new()
@@ -86,7 +112,7 @@ impl PatternDefs {
                         .set("stroke-width", line_w),
                 ),
             "dotted" => {
-                let r = cell * 0.2;
+                let r = cell * PATTERN_DOT_RADIUS_RATIO;
                 Pattern::new()
                     .set("id", &*id)
                     .set("patternUnits", "userSpaceOnUse")
@@ -121,11 +147,11 @@ fn add_label(doc: Document, label: &LabelInstance) -> Document {
     doc.add(
         Text::new(&*label.text)
             .set("x", label.x)
-            .set("y", -label.y)
+            .set("y", label.y)
             .set("font-size", label.font_size)
             .set("font-family", &*label.font_family)
             .set("fill", &*label.color)
-            .set("text-anchor", "middle")
+            .set("text-anchor", label.anchor)
             .set("dominant-baseline", "middle"),
     )
 }
@@ -136,6 +162,7 @@ fn render_feature(
     labels: &mut Vec<LabelInstance>,
     config: &StyleConfig,
     patterns: &mut PatternDefs,
+    max_gap: f64,
 ) -> Group {
     let geom = match feat.geometry.as_ref() {
         Some(g) => g,
@@ -167,7 +194,7 @@ fn render_feature(
     let properties_ref = Some(&properties);
     let style = resolve_style(config, properties_ref);
 
-    let mut out = RenderOutput::default();
+    let mut out = RenderOutput { max_gap, ..Default::default() };
     render_geometry(&mut out, &geom.value);
     let group = add_geometry_to_group(group, out, &style, patterns);
 
@@ -176,12 +203,18 @@ fn render_feature(
         None => return group,
     };
 
-    let (cx, cy) = match geometry_centroid(&geom.value) {
+    let (mut cx, cy) = match geometry_centroid(&geom.value) {
         Some(c) => c,
         None => return group,
     };
 
-    let default_font_size = config.label_font_size.unwrap_or(0.3);
+    let is_point = matches!(geom.value, geojson::Value::Point(_) | geojson::Value::MultiPoint(_));
+    if is_point {
+        let r = config.point_radius.unwrap_or(config.stroke_width * 5.0);
+        cx += r * 1.5;
+    }
+
+    let default_font_size = config.label_font_size.unwrap_or(DEFAULT_LABEL_FONT_SIZE);
     let default_color = config.label_color.as_deref().unwrap_or("black");
     let default_font_family = config.label_font_family.as_deref().unwrap_or("Arial");
 
@@ -195,6 +228,7 @@ fn render_feature(
                     font_size: default_font_size,
                     color: default_color.to_string(),
                     font_family: default_font_family.to_string(),
+                    anchor: if is_point { "start" } else { "middle" },
                 });
             }
         }
@@ -203,7 +237,7 @@ fn render_feature(
             for (i, line) in lines.iter().enumerate() {
                 if let Some(text) = interpolate_template(&line.text, &properties) {
                     let fs = line.font_size.unwrap_or(default_font_size);
-                    let offset = (i as f64 - (total_lines as f64 - 1.0) / 2.0) * fs * 1.2;
+                    let offset = (i as f64 - (total_lines as f64 - 1.0) / 2.0) * fs * LABEL_LINE_SPACING;
                     labels.push(LabelInstance {
                         x: cx,
                         y: cy - offset,
@@ -219,6 +253,7 @@ fn render_feature(
                             .as_deref()
                             .unwrap_or(default_font_family)
                             .to_string(),
+                        anchor: if is_point { "start" } else { "middle" },
                     });
                 }
             }
@@ -265,18 +300,23 @@ fn add_geometry_to_group(
         );
     }
 
-    for (x, y) in &out.points {
-        let fill = resolve_fill(style, patterns);
-        group = group.add(
-            Circle::new()
-                .set("cx", *x)
-                .set("cy", -*y)
-                .set("r", style.point_radius)
-                .set("fill", &*fill)
-                .set("fill-opacity", style.fill_opacity)
-                .set("stroke", &*style.stroke)
-                .set("stroke-width", style.stroke_width),
-        );
+    let point_fill = style.point_color.as_deref().unwrap_or(&style.fill);
+    if point_fill != "none" {
+        for (x, y) in &out.points {
+            if x.is_nan() || y.is_nan() {
+                continue;
+            }
+            group = group.add(
+                Circle::new()
+                    .set("cx", *x)
+                    .set("cy", *y)
+                    .set("r", style.point_radius)
+                    .set("fill", point_fill)
+                    .set("fill-opacity", style.fill_opacity)
+                    .set("stroke", &*style.stroke)
+                    .set("stroke-width", style.stroke_width),
+            );
+        }
     }
 
     group
@@ -305,6 +345,49 @@ fn try_topojson(content: &str) -> Result<GeoJson, String> {
     }))
 }
 
+fn render_graticule(proj: &CompiledProjection, grat: &GraticuleConfig, max_gap: f64) -> Group {
+    let mut group = Group::new();
+    let step = grat.step;
+    let segments = GRATICULE_SEGMENTS;
+
+    let make_path = |data: svg::node::element::path::Data| -> Path {
+        Path::new()
+            .set("fill", "none")
+            .set("stroke", &*grat.color)
+            .set("stroke-width", grat.width)
+            .set("stroke-opacity", grat.opacity)
+            .set("d", data)
+    };
+
+    // Meridians (longitude lines)
+    let mut lon = -180.0;
+    while lon <= 180.0 {
+        let mut pb = PathBuilder::new(svg::node::element::path::Data::new(), max_gap);
+        for i in 0..=segments {
+            let lat = -90.0 + (180.0 * i as f64 / segments as f64);
+            let (x, y) = proj.project(lon, lat);
+            pb.add(x, y);
+        }
+        group = group.add(make_path(pb.finish()));
+        lon += step;
+    }
+
+    // Parallels (latitude lines)
+    let mut lat = -90.0;
+    while lat <= 90.0 {
+        let mut pb = PathBuilder::new(svg::node::element::path::Data::new(), max_gap);
+        for i in 0..=segments * 2 {
+            let lng = -180.0 + (360.0 * i as f64 / (segments * 2) as f64);
+            let (x, y) = proj.project(lng, lat);
+            pb.add(x, y);
+        }
+        group = group.add(make_path(pb.finish()));
+        lat += step;
+    }
+
+    group
+}
+
 #[wasm_func]
 pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     let mut conf: StyleConfig = {
@@ -315,17 +398,21 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     };
 
     let content = String::from_utf8(geojson.to_vec()).map_err(|e| e.to_string())?;
-    let geojson = match content.parse::<GeoJson>() {
+    let mut geojson = match content.parse::<GeoJson>() {
         Ok(gj) => gj,
         Err(_) => try_topojson(&content)?,
     };
 
+    let proj = CompiledProjection::from_config(conf.projection.take());
+    project_geojson(&mut geojson, &proj);
+
     if conf.viewbox.is_none() {
-        let padding = conf.viewbox_padding.unwrap_or(0.1);
+        let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
         conf.viewbox = Some(compute_viewbox(&geojson, padding));
     }
 
-    let viewbox = conf.viewbox.unwrap_or((0.0, 0.0, 100.0, 100.0));
+    let viewbox = conf.viewbox.unwrap_or(FALLBACK_VIEWBOX);
+    let max_gap = proj.antimeridian_gap();
     let mut doc = Document::new().set("viewBox", viewbox);
     let mut group = Group::new();
     let mut labels: Vec<LabelInstance> = Vec::new();
@@ -334,15 +421,15 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     match geojson {
         GeoJson::FeatureCollection(fc) => {
             for feat in &fc.features {
-                group = render_feature(group, feat, &mut labels, &conf, &mut patterns);
+                group = render_feature(group, feat, &mut labels, &conf, &mut patterns, max_gap);
             }
         }
         GeoJson::Feature(ref feat) => {
-            group = render_feature(group, feat, &mut labels, &conf, &mut patterns);
+            group = render_feature(group, feat, &mut labels, &conf, &mut patterns, max_gap);
         }
         GeoJson::Geometry(ref geom) => {
             let style = resolve_style(&conf, None);
-            let mut out = RenderOutput::default();
+            let mut out = RenderOutput { max_gap, ..Default::default() };
             render_geometry(&mut out, &geom.value);
             group = add_geometry_to_group(group, out, &style, &mut patterns);
         }
@@ -351,6 +438,19 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     // Add defs before geometry so pattern references resolve correctly
     if patterns.has_patterns() {
         doc = doc.add(patterns.defs);
+    }
+
+    // Graticule behind geometry
+    if let Some(ref grat) = conf.graticule {
+        let vb_diag = (viewbox.2.powi(2) + viewbox.3.powi(2)).sqrt();
+        let scaled_width = grat.width * vb_diag / GRATICULE_WIDTH_SCALE;
+        let scaled_grat = GraticuleConfig {
+            step: grat.step,
+            color: grat.color.clone(),
+            width: scaled_width,
+            opacity: grat.opacity,
+        };
+        doc = doc.add(render_graticule(&proj, &scaled_grat, max_gap));
     }
 
     doc = doc.add(group);
