@@ -1,8 +1,6 @@
 # mercator
 
-<p align="center">
-  <img src="examples/data/logo.svg" width="400" alt="Mercator hero – orthographic projection of the world">
-</p>
+![logo](examples/data/logo.png)
 
 Mercator is a Typst plugin to render GeoJSON and TopoJSON as SVG maps.
 
