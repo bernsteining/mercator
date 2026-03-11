@@ -52,6 +52,10 @@ pub fn compile() -> Compiled {
 }
 
 impl Projection for Compiled {
+    fn antimeridian_gap(&self) -> f64 {
+        1.5
+    }
+
     fn project(&self, lon_deg: f64, lat_deg: f64) -> (f64, f64) {
         let lat = lat_deg.to_radians();
         let lon = lon_deg.to_radians();

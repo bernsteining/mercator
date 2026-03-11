@@ -23,6 +23,10 @@ pub fn compile(center_lon: f64) -> Compiled {
 }
 
 impl Projection for Compiled {
+    fn antimeridian_gap(&self) -> f64 {
+        1.0
+    }
+
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let lambda = (lon - self.center_lon).to_radians();
         let phi = lat.to_radians();
