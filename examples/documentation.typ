@@ -34,7 +34,7 @@
 )
 #show raw.where(lang: "example"): it => {
   code-block(text(size: 7pt, raw(block: true, lang: "typst", it.text)))
-  eval(it.text, mode: "markup", scope: doc-scope)
+  align(center, eval(it.text, mode: "markup", scope: doc-scope))
 }
 
 // --- Hero ---
@@ -199,14 +199,14 @@ By default, the viewbox is auto-computed from the GeoJSON bounds with a 10% padd
   columns: (1fr, 1fr),
   gutter: 1em,
   code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, json.encode((\n  stroke: \"black\",\n  stroke_width: 0.02,\n  fill: \"grey\",\n  fill_opacity: 0.5,\n  viewbox: array((15.0, -69.4, 10.0, 6.0)),\n  point_color: \"none\",\n)), width: 70%)"))),
-  render-map(sweden, json.encode((
+  align(center + horizon, render-map(sweden, json.encode((
     stroke: "black",
     stroke_width: 0.02,
     fill: "grey",
     fill_opacity: 0.5,
     viewbox: array((15.0, -69.4, 10.0, 6.0)),
     point_color: "none",
-  )), width: 70%),
+  )), width: 70%)),
 )
 
 #pagebreak()
@@ -651,11 +651,11 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
   pagebreak()
   [==== AuthaGraph]
   text(size: 8.5pt, style: "italic")[Invented by Hajime Narukawa in 1999. Maps the sphere onto a tetrahedron, then unfolds it into a rectangle. Nearly equal-area with minimal shape distortion, distributing errors at four oceanic points. The original formulas are proprietary; this is Kunimune's open-source approximation. #link("https://en.wikipedia.org/wiki/AuthaGraph_projection")[\[Wikipedia\]]]
-  align(center)[
-    #render-map(world, json.encode((..conic_config, projection: (
+  align(center,
+    render-map(world, json.encode((..conic_config, projection: (
       type: "authagraph",
-    ), graticule: (step: 10, color: "red", opacity: 0.5))), width: 100%)
-  ]
+    ), graticule: (step: 10, color: "red", opacity: 0.5))), width: 100%, height: 50%)
+  )
   block(
     width: 100%, inset: 8pt, radius: 3pt, fill: luma(245), stroke: 0.5pt + luma(200),
     text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, json.encode((\n  projection: (\n    type: \"authagraph\",\n  ),\n))"))
