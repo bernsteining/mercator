@@ -1,13 +1,12 @@
-use super::normalize_lon;
+use super::{normalize_lon, Projection};
 
-/// Latitude clamp to avoid singularities at the poles.
 const LAT_CLAMP: f64 = 89.99;
 
-pub struct Compiled {
-    pub n: f64,
-    pub f: f64,
-    pub rho0: f64,
-    pub central_meridian: f64,
+pub(super) struct Compiled {
+    n: f64,
+    f: f64,
+    rho0: f64,
+    central_meridian: f64,
 }
 
 pub fn compile(
@@ -41,15 +40,17 @@ pub fn compile(
     Compiled { n, f, rho0, central_meridian }
 }
 
-pub fn project(lon: f64, lat: f64, c: &Compiled) -> (f64, f64) {
-    let lat_rad = lat.clamp(-LAT_CLAMP, LAT_CLAMP).to_radians();
-    let delta_lon = normalize_lon(lon - c.central_meridian);
-    let theta = c.n * delta_lon.to_radians();
-    let rho = c.f
-        / (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0)
-            .tan()
-            .powf(c.n);
-    let x = rho * theta.sin();
-    let y = c.rho0 - rho * theta.cos();
-    (x, -y)
+impl Projection for Compiled {
+    fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
+        let lat_rad = lat.clamp(-LAT_CLAMP, LAT_CLAMP).to_radians();
+        let delta_lon = normalize_lon(lon - self.central_meridian);
+        let theta = self.n * delta_lon.to_radians();
+        let rho = self.f
+            / (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0)
+                .tan()
+                .powf(self.n);
+        let x = rho * theta.sin();
+        let y = self.rho0 - rho * theta.cos();
+        (x, -y)
+    }
 }

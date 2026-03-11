@@ -28,8 +28,8 @@ pub struct LabelInstance {
 
 fn default_stroke() -> String { "black".to_string() }
 fn default_stroke_width() -> f64 { 0.05 }
-fn default_fill() -> String { "red".to_string() }
-fn default_fill_opacity() -> f64 { 0.5 }
+fn default_fill() -> String { "white".to_string() }
+fn default_fill_opacity() -> f64 { 1.0 }
 
 #[derive(Debug, Deserialize)]
 pub struct StyleConfig {
@@ -52,6 +52,7 @@ pub struct StyleConfig {
     pub fill_pattern: Option<String>,
     pub projection: Option<ProjectionConfig>,
     pub graticule: Option<GraticuleConfig>,
+    pub tissot: Option<TissotConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,13 +72,39 @@ fn default_graticule_color() -> String { "#ccc".to_string() }
 fn default_graticule_width() -> f64 { 0.5 }
 fn default_graticule_opacity() -> f64 { 0.6 }
 
+#[derive(Debug, Deserialize)]
+pub struct TissotConfig {
+    #[serde(default = "default_tissot_step")]
+    pub step: f64,
+    #[serde(default = "default_tissot_radius")]
+    pub radius: f64,
+    #[serde(default = "default_tissot_fill")]
+    pub fill: String,
+    #[serde(default = "default_tissot_fill_opacity")]
+    pub fill_opacity: f64,
+    #[serde(default = "default_tissot_stroke")]
+    pub stroke: String,
+    #[serde(default = "default_tissot_stroke_width")]
+    pub stroke_width: f64,
+    #[serde(default = "default_tissot_max_lat")]
+    pub max_lat: f64,
+}
+
+fn default_tissot_step() -> f64 { 30.0 }
+fn default_tissot_radius() -> f64 { 5.0 }
+fn default_tissot_fill() -> String { "red".to_string() }
+fn default_tissot_fill_opacity() -> f64 { 0.3 }
+fn default_tissot_stroke() -> String { "red".to_string() }
+fn default_tissot_stroke_width() -> f64 { 0.5 }
+fn default_tissot_max_lat() -> f64 { 60.0 }
+
 impl Default for StyleConfig {
     fn default() -> Self {
         Self {
             stroke: "black".to_string(),
             stroke_width: 0.05,
-            fill: "red".to_string(),
-            fill_opacity: 0.5,
+            fill: "white".to_string(),
+            fill_opacity: 1.0,
             viewbox: None,
             viewbox_padding: None,
             label_color: Some("black".to_string()),
@@ -89,6 +116,7 @@ impl Default for StyleConfig {
             fill_pattern: None,
             projection: None,
             graticule: None,
+            tissot: None,
         }
     }
 }
@@ -108,18 +136,15 @@ pub fn resolve_style(
     properties: Option<&serde_json::Map<String, serde_json::Value>>,
 ) -> ResolvedStyle {
     let resolve = |template: &str, fallback: &str| -> String {
+        if !template.contains('{') {
+            return template.to_string();
+        }
         if let Some(props) = properties {
-            if template.contains('{') {
-                if let Some(val) = interpolate_template(template, props) {
-                    return val;
-                }
+            if let Some(val) = interpolate_template(template, props) {
+                return val;
             }
         }
-        if template.contains('{') {
-            fallback.to_string()
-        } else {
-            template.to_string()
-        }
+        fallback.to_string()
     };
 
     let fill_pattern = config.fill_pattern.as_ref().and_then(|template| {
@@ -146,27 +171,36 @@ pub fn interpolate_template(
     template: &str,
     properties: &serde_json::Map<String, serde_json::Value>,
 ) -> Option<String> {
-    let mut result = String::new();
-    let mut chars = template.chars().peekable();
+    let mut result = String::with_capacity(template.len());
+    let bytes = template.as_bytes();
+    let mut i = 0;
 
-    while let Some(ch) = chars.next() {
-        if ch == '{' {
-            let mut key = String::new();
-            for ch in chars.by_ref() {
-                if ch == '}' {
-                    break;
-                }
-                key.push(ch);
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            i += 1;
+            let key_start = i;
+            while i < bytes.len() && bytes[i] != b'}' {
+                i += 1;
             }
-            let val = properties.get(&key)?;
+            let key = &template[key_start..i];
+            let val = properties.get(key)?;
             match val {
                 serde_json::Value::String(s) => result.push_str(s),
-                serde_json::Value::Number(n) => result.push_str(&n.to_string()),
-                serde_json::Value::Bool(b) => result.push_str(&b.to_string()),
+                serde_json::Value::Number(n) => {
+                    use std::fmt::Write;
+                    let _ = write!(result, "{}", n);
+                }
+                serde_json::Value::Bool(b) => {
+                    result.push_str(if *b { "true" } else { "false" });
+                }
                 _ => return None,
             }
+            if i < bytes.len() {
+                i += 1; // skip '}'
+            }
         } else {
-            result.push(ch);
+            result.push(bytes[i] as char);
+            i += 1;
         }
     }
 

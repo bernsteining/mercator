@@ -1,7 +1,15 @@
-pub fn project(lon: f64, lat: f64) -> (f64, f64) {
-    (lon, -lat)
+use super::{normalize_lon, Projection};
+
+pub struct Equirectangular {
+    pub central_meridian: f64,
 }
 
-pub fn antimeridian_gap() -> f64 {
-    180.0
+impl Projection for Equirectangular {
+    fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
+        (normalize_lon(lon - self.central_meridian), -lat)
+    }
+
+    fn antimeridian_gap(&self) -> f64 {
+        180.0
+    }
 }

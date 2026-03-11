@@ -1,13 +1,9 @@
-use super::normalize_lon;
+use super::{normalize_lon, Projection};
 
-/// Robinson scaling constants.
 const X_SCALE: f64 = 0.8487;
 const Y_SCALE: f64 = 1.3523;
-
-/// Table step size in degrees.
 const TABLE_STEP: f64 = 5.0;
 
-/// Robinson projection lookup table (PLEN, PDFE) at 5° intervals from 0° to 90°.
 const TABLE: [(f64, f64); 19] = [
     (1.0000, 0.0000), // 0°
     (0.9986, 0.0620), // 5°
@@ -30,7 +26,6 @@ const TABLE: [(f64, f64); 19] = [
     (0.5322, 1.0000), // 90°
 ];
 
-/// Linearly interpolate the Robinson table for a given absolute latitude.
 fn interpolate(abs_lat: f64) -> (f64, f64) {
     let idx = (abs_lat / TABLE_STEP).floor() as usize;
     if idx >= TABLE.len() - 1 {
@@ -42,15 +37,21 @@ fn interpolate(abs_lat: f64) -> (f64, f64) {
     (plen0 + t * (plen1 - plen0), pdfe0 + t * (pdfe1 - pdfe0))
 }
 
-pub fn project(lon: f64, lat: f64, central_meridian: f64) -> (f64, f64) {
-    let abs_lat = lat.clamp(-90.0, 90.0).abs();
-    let (plen, pdfe) = interpolate(abs_lat);
-    let delta_lon = normalize_lon(lon - central_meridian);
-    let x = X_SCALE * plen * delta_lon.to_radians();
-    let y = Y_SCALE * pdfe * lat.signum();
-    (x, -y)
+pub struct Robinson {
+    pub central_meridian: f64,
 }
 
-pub fn antimeridian_gap() -> f64 {
-    3.0
+impl Projection for Robinson {
+    fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
+        let abs_lat = lat.clamp(-90.0, 90.0).abs();
+        let (plen, pdfe) = interpolate(abs_lat);
+        let delta_lon = normalize_lon(lon - self.central_meridian);
+        let x = X_SCALE * plen * delta_lon.to_radians();
+        let y = Y_SCALE * pdfe * lat.signum();
+        (x, -y)
+    }
+
+    fn antimeridian_gap(&self) -> f64 {
+        3.0
+    }
 }

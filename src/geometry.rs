@@ -1,4 +1,3 @@
-use geo::algorithm::centroid::Centroid;
 use geojson::{GeoJson, Value};
 use svg::node::element::path::Data;
 
@@ -33,46 +32,50 @@ pub fn for_each_coord_mut(value: &mut Value, f: &mut dyn FnMut(&mut Vec<f64>)) {
 /// Accumulates SVG path commands while handling NaN coordinates and antimeridian gaps.
 pub struct PathBuilder {
     data: Data,
-    prev_x: Option<f64>,
-    first_x: Option<f64>,
+    prev: Option<(f64, f64)>,
+    first: Option<(f64, f64)>,
     max_gap: f64,
 }
 
 impl PathBuilder {
     pub fn new(data: Data, max_gap: f64) -> Self {
-        Self { data, prev_x: None, first_x: None, max_gap }
+        Self { data, prev: None, first: None, max_gap }
+    }
+
+    fn is_gap(&self, x1: f64, y1: f64, x2: f64, y2: f64) -> bool {
+        (x1 - x2).abs() > self.max_gap || (y1 - y2).abs() > self.max_gap
     }
 
     /// Add a point, handling NaN skipping and gap-based path breaking.
     pub fn add(&mut self, x: f64, y: f64) {
         if !x.is_finite() || !y.is_finite() {
-            self.prev_x = None;
+            self.prev = None;
             return;
         }
-        if let Some(px) = self.prev_x {
-            if (x - px).abs() > self.max_gap {
+        if let Some((px, py)) = self.prev {
+            if self.is_gap(x, y, px, py) {
                 self.data = std::mem::take(&mut self.data).move_to((x, y));
             } else {
                 self.data = std::mem::take(&mut self.data).line_to((x, y));
             }
         } else {
             self.data = std::mem::take(&mut self.data).move_to((x, y));
-            if self.first_x.is_none() {
-                self.first_x = Some(x);
+            if self.first.is_none() {
+                self.first = Some((x, y));
             }
         }
-        self.prev_x = Some(x);
+        self.prev = Some((x, y));
     }
 
     /// Close the current sub-path if the last→first gap is small enough.
     pub fn close_if_continuous(&mut self) {
-        if let (Some(last), Some(first)) = (self.prev_x, self.first_x) {
-            if (last - first).abs() <= self.max_gap {
+        if let (Some((lx, ly)), Some((fx, fy))) = (self.prev, self.first) {
+            if !self.is_gap(lx, ly, fx, fy) {
                 self.data = std::mem::take(&mut self.data).close();
             }
         }
-        self.prev_x = None;
-        self.first_x = None;
+        self.prev = None;
+        self.first = None;
     }
 
     pub fn finish(self) -> Data {
@@ -99,25 +102,32 @@ impl Default for RenderOutput {
     }
 }
 
-/// Extract altitude from a GeoJSON coordinate (3rd element), returning 0.0 if absent.
-pub fn coord_altitude(coord: &[f64]) -> Option<f64> {
-    coord.get(2).copied()
-}
-
 pub fn first_altitude(value: &Value) -> Option<f64> {
     let mut result = None;
     for_each_coord(value, &mut |c| {
         if result.is_none() {
-            result = coord_altitude(c);
+            result = c.get(2).copied();
         }
     });
     result
 }
 
 pub fn geometry_centroid(value: &Value) -> Option<(f64, f64)> {
-    let geom: geo::Geometry<f64> = value.clone().try_into().ok()?;
-    let c = geom.centroid()?;
-    Some((c.x(), c.y()))
+    let mut sum_x = 0.0;
+    let mut sum_y = 0.0;
+    let mut count = 0u32;
+    for_each_coord(value, &mut |c| {
+        if c.len() >= 2 && c[0].is_finite() && c[1].is_finite() {
+            sum_x += c[0];
+            sum_y += c[1];
+            count += 1;
+        }
+    });
+    if count == 0 {
+        None
+    } else {
+        Some((sum_x / count as f64, sum_y / count as f64))
+    }
 }
 
 pub fn render_geometry(out: &mut RenderOutput, value: &Value) {
@@ -165,7 +175,9 @@ pub fn draw_polygon(data: Data, coords: &[Vec<Vec<f64>>], max_gap: f64) -> Data 
     let mut pb = PathBuilder::new(data, max_gap);
     for ring in coords {
         for p in ring {
-            pb.add(p[0], p[1]);
+            if p.len() >= 2 {
+                pb.add(p[0], p[1]);
+            }
         }
         pb.close_if_continuous();
     }
@@ -210,7 +222,7 @@ pub fn compute_viewbox(geojson: &GeoJson, padding: f64) -> (f64, f64, f64, f64) 
         ];
 
         let mut update = |coord: &[f64]| {
-            if coord[0].is_finite() && coord[1].is_finite() {
+            if coord.len() >= 2 && coord[0].is_finite() && coord[1].is_finite() {
                 bounds[0] = bounds[0].min(coord[0]);
                 bounds[1] = bounds[1].max(coord[0]);
                 bounds[2] = bounds[2].min(coord[1]);
@@ -241,8 +253,8 @@ pub fn compute_viewbox(geojson: &GeoJson, padding: f64) -> (f64, f64, f64, f64) 
     };
 
     let (w, h) = (max_x - min_x, max_y - min_y);
-    let (px, py) = (w * padding, h * padding);
-    let (fw, fh) = ((w + 2.0 * px).max(1.0), (h + 2.0 * py).max(1.0));
+    let p = w.max(h) * padding;
+    let (fw, fh) = ((w + 2.0 * p).max(1.0), (h + 2.0 * p).max(1.0));
 
-    (min_x - px, min_y - py, fw, fh)
+    (min_x - p, min_y - p, fw, fh)
 }
