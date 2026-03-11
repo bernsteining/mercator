@@ -28,8 +28,12 @@
 // Show rule that displays a code block and executes it.
 
 #let doc-scope = ("render-map": render-map, sweden: sweden, world: world)
+#let code-block(body) = block(
+  width: 100%, inset: 8pt, radius: 3pt,
+  fill: luma(245), stroke: 0.5pt + luma(200), body,
+)
 #show raw.where(lang: "example"): it => {
-  raw(block: true, lang: "typst", it.text)
+  code-block(text(size: 7pt, raw(block: true, lang: "typst", it.text)))
   eval(it.text, mode: "markup", scope: doc-scope)
 }
 
@@ -94,11 +98,7 @@ Use a Typst show rule to render inline GeoJSON code blocks as maps.
 
 Any #raw("```geojson```") code block will automatically be rendered as an image.
 
-```typst
-#show raw.where(lang: "geojson"): it => align(
-  center, render-map(it.text, width: 40%)
-)
-```
+#code-block(text(size: 7pt, raw(block: true, lang: "typst", "#show raw.where(lang: \"geojson\"): it => align(\n  center, render-map(it.text, width: 40%)\n)")))
 
 #let smiley = `{"type":"GeometryCollection","geometries":[{"type":"Polygon","coordinates":[[[9.5,5.0],[9.46,5.59],[9.35,6.16],[9.16,6.72],[8.9,7.25],[8.57,7.74],[8.18,8.18],[7.74,8.57],[7.25,8.9],[6.72,9.16],[6.16,9.35],[5.59,9.46],[5.0,9.5],[4.41,9.46],[3.84,9.35],[3.28,9.16],[2.75,8.9],[2.26,8.57],[1.82,8.18],[1.43,7.74],[1.1,7.25],[0.84,6.72],[0.65,6.16],[0.54,5.59],[0.5,5.0],[0.54,4.41],[0.65,3.84],[0.84,3.28],[1.1,2.75],[1.43,2.26],[1.82,1.82],[2.26,1.43],[2.75,1.1],[3.28,0.84],[3.84,0.65],[4.41,0.54],[5.0,0.5],[5.59,0.54],[6.16,0.65],[6.72,0.84],[7.25,1.1],[7.74,1.43],[8.18,1.82],[8.57,2.26],[8.9,2.75],[9.16,3.28],[9.35,3.84],[9.46,4.41],[9.5,5.0]]]},{"type":"Polygon","coordinates":[[[3.85,6.2],[3.81,6.41],[3.69,6.59],[3.51,6.71],[3.3,6.75],[3.09,6.71],[2.91,6.59],[2.79,6.41],[2.75,6.2],[2.79,5.99],[2.91,5.81],[3.09,5.69],[3.3,5.65],[3.51,5.69],[3.69,5.81],[3.81,5.99],[3.85,6.2]]]},{"type":"Polygon","coordinates":[[[7.25,6.2],[7.21,6.41],[7.09,6.59],[6.91,6.71],[6.7,6.75],[6.49,6.71],[6.31,6.59],[6.19,6.41],[6.15,6.2],[6.19,5.99],[6.31,5.81],[6.49,5.69],[6.7,5.65],[6.91,5.69],[7.09,5.81],[7.21,5.99],[7.25,6.2]]]},{"type":"LineString","coordinates":[[2.86,3.4],[3.06,3.18],[3.3,2.98],[3.55,2.81],[3.82,2.66],[4.1,2.55],[4.39,2.47],[4.7,2.42],[5.0,2.4],[5.3,2.42],[5.61,2.47],[5.9,2.55],[6.18,2.66],[6.45,2.81],[6.7,2.98],[6.94,3.18],[7.14,3.4]]}]}`
 
@@ -198,18 +198,7 @@ By default, the viewbox is auto-computed from the GeoJSON bounds with a 10% padd
 #grid(
   columns: (1fr, 1fr),
   gutter: 1em,
-  text(size: 8pt)[
-    ```typst
-    #render-map(sweden, json.encode((
-      stroke: "black",
-      stroke_width: 0.02,
-      fill: "grey",
-      fill_opacity: 0.5,
-      viewbox: array((15.0, -69.4, 10.0, 6.0)),
-      point_color: "none",
-    )), width: 70%)
-    ```
-  ],
+  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, json.encode((\n  stroke: \"black\",\n  stroke_width: 0.02,\n  fill: \"grey\",\n  fill_opacity: 0.5,\n  viewbox: array((15.0, -69.4, 10.0, 6.0)),\n  point_color: \"none\",\n)), width: 70%)"))),
   render-map(sweden, json.encode((
     stroke: "black",
     stroke_width: 0.02,
@@ -331,14 +320,7 @@ A *graticule* draws a grid of meridians (longitude) and parallels (latitude) on 
   ],
 )
 
-```typst
-#graticule: (
-  step: 15,      // degrees between lines (default: 15)
-  color: "red",  // line color (default: "#ccc")
-  opacity: 0.5,  // line opacity (default: 0.6)
-  width: 0.5,    // line width (default: 0.5)
-)
-```
+#code-block(text(size: 7pt, raw(block: true, lang: "typst", "graticule: (\n  step: 15,      // degrees between lines (default: 15)\n  color: \"red\",  // line color (default: \"#ccc\")\n  opacity: 0.5,  // line opacity (default: 0.6)\n  width: 0.5,    // line width (default: 0.5)\n)")))
 
 The following examples of projections will use a graticule to visually represent the distortions due to the projections.
 
@@ -357,17 +339,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
   tissot: (step: 30, radius: 5, fill: "red", fill_opacity: 0.4, stroke: "darkred", stroke_width: 0.3),
 )), width: 80%))
 
-```typst
-#tissot: (
-  step: 30,          // degrees between circles (default: 30)
-  radius: 5,         // circle radius in degrees (default: 5)
-  fill: "red",       // fill color (default: "red")
-  fill_opacity: 0.3, // fill opacity (default: 0.3)
-  stroke: "red",     // stroke color (default: "red")
-  stroke_width: 0.5, // stroke width (default: 0.5)
-  max_lat: 60,       // maximum latitude in degrees (default: 60)
-)
-```
+#code-block(text(size: 7pt, raw(block: true, lang: "typst", "tissot: (\n  step: 30,          // degrees between circles (default: 30)\n  radius: 5,         // circle radius in degrees (default: 5)\n  fill: \"red\",       // fill color (default: \"red\")\n  fill_opacity: 0.3, // fill opacity (default: 0.3)\n  stroke: \"red\",     // stroke color (default: \"red\")\n  stroke_width: 0.5, // stroke width (default: 0.5)\n  max_lat: 60,       // maximum latitude in degrees (default: 60)\n)")))
 
 #let world_config = (
   stroke: "white",
@@ -699,36 +671,7 @@ Combining projection, graticule, Tissot's indicatrix, per-feature styling, fill 
 #grid(
   columns: (1fr, 1fr),
   gutter: 1em,
-  text(size: 7pt)[
-    ```typst
-    #render-map(sweden, json.encode((
-      stroke: "white",
-      stroke_width: 0.01,
-      fill: "{fill_color}",
-      fill_opacity: 0.8,
-      fill_pattern: "{pattern}",
-      point_radius: 0.15,
-      point_color: "magenta",
-      label: (
-        (text: "{point}", font_size: 0.40,
-         color: "black",
-         font_family: "New Computer Modern"),
-        (text: "id: {l_id}", font_size: 0.12,
-         color: "red"),
-      ),
-      projection: (
-        type: "mercator",
-        central_meridian: 16,
-      ),
-      viewbox: (-6.4, -74.4, 10, 10),
-      graticule: (step: 2, color: "#ccc",
-        opacity: 0.4, width: 0.3),
-      tissot: (step: 3.3, radius: 0.5,
-        fill: "red", fill_opacity: 0.2,
-        max_lat: 80),
-    )), width: 100%)
-    ```
-  ],
+  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, json.encode((\n  stroke: \"white\",\n  stroke_width: 0.01,\n  fill: \"{fill_color}\",\n  fill_opacity: 0.8,\n  fill_pattern: \"{pattern}\",\n  point_radius: 0.15,\n  point_color: \"magenta\",\n  label: (\n    (text: \"{point}\", font_size: 0.40,\n     color: \"black\",\n     font_family: \"New Computer Modern\"),\n    (text: \"id: {l_id}\", font_size: 0.12,\n     color: \"red\"),\n  ),\n  projection: (\n    type: \"mercator\",\n    central_meridian: 16,\n  ),\n  viewbox: (-6.4, -74.4, 10, 10),\n  graticule: (step: 2, color: \"#ccc\",\n    opacity: 0.4, width: 0.3),\n  tissot: (step: 3.3, radius: 0.5,\n    fill: \"red\", fill_opacity: 0.2,\n    max_lat: 80),\n)), width: 100%)"))),
   render-map(sweden, json.encode((
     stroke: "white",
     stroke_width: 0.01,
