@@ -38,6 +38,7 @@ impl Projection for Compiled {
     }
 }
 
+#[inline]
 fn pre_rotate(lambda: f64, phi: f64) -> (f64, f64) {
     let sin_phi = phi.sin();
     let cos_phi = phi.cos();
@@ -51,6 +52,7 @@ fn pre_rotate(lambda: f64, phi: f64) -> (f64, f64) {
     (y3.atan2(x3), z3.clamp(-1.0, 1.0).asin())
 }
 
+#[inline]
 fn quincuncial(lambda: f64, phi: f64, c: &Compiled) -> (f64, f64) {
     let front = lambda.abs() < FRAC_PI_2;
     let lam = if front {
@@ -75,6 +77,7 @@ fn quincuncial(lambda: f64, phi: f64, c: &Compiled) -> (f64, f64) {
     }
 }
 
+#[inline]
 fn guyou_forward(lambda: f64, phi: f64, k_prime: f64, k_sq: f64, k_complete: f64) -> (f64, f64) {
     let psi = (FRAC_PI_4 + phi.abs() / 2.0).tan().ln();
     let r = (-psi).exp() / k_prime.sqrt();
@@ -84,6 +87,7 @@ fn guyou_forward(lambda: f64, phi: f64, k_prime: f64, k_sq: f64, k_complete: f64
     (-t.1, sign_phi * (0.5 * k_complete - t.0))
 }
 
+#[inline]
 fn complex_atan(x: f64, y: f64) -> (f64, f64) {
     let x2 = x * x;
     let y_1 = y + 1.0;

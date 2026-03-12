@@ -42,11 +42,13 @@ impl PathBuilder {
         Self { data, prev: None, first: None, max_gap }
     }
 
+    #[inline]
     fn is_gap(&self, x1: f64, y1: f64, x2: f64, y2: f64) -> bool {
         (x1 - x2).abs() > self.max_gap || (y1 - y2).abs() > self.max_gap
     }
 
     /// Add a point, handling NaN skipping and gap-based path breaking.
+    #[inline]
     pub fn add(&mut self, x: f64, y: f64) {
         if !x.is_finite() || !y.is_finite() {
             self.prev = None;

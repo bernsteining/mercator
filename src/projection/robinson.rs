@@ -26,6 +26,7 @@ const TABLE: [(f64, f64); 19] = [
     (0.5322, 1.0000), // 90°
 ];
 
+#[inline]
 fn interpolate(abs_lat: f64) -> (f64, f64) {
     let idx = (abs_lat / TABLE_STEP).floor() as usize;
     if idx >= TABLE.len() - 1 {

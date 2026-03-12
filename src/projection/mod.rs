@@ -38,6 +38,7 @@ fn prepare_lon_lat(lon: f64, lat: f64, central_meridian: f64) -> (f64, f64) {
     )
 }
 
+#[inline]
 fn normalize_lon(mut d: f64) -> f64 {
     d = d % 360.0;
     if d > 180.0 {
@@ -243,7 +244,7 @@ pub fn from_config(config: Option<ProjectionConfig>) -> Box<dyn Projection> {
                 Box::new(hammer::Hammer { central_meridian })
             }
             ProjectionConfig::WinkelTripel { central_meridian } => {
-                Box::new(winkel_tripel::WinkelTripel { central_meridian })
+                Box::new(winkel_tripel::WinkelTripel::new(central_meridian))
             }
             ProjectionConfig::Authagraph => Box::new(authagraph::compile()),
         },

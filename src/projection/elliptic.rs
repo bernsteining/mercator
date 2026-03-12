@@ -4,6 +4,7 @@ const EPSILON: f64 = 1e-12;
 
 /// Incomplete elliptic integral of the first kind F(φ|m) where m = k².
 /// Abramowitz and Stegun, 17.6.7.
+#[inline]
 pub fn elliptic_f(phi: f64, m: f64) -> f64 {
     if m == 0.0 {
         return phi;
@@ -39,6 +40,7 @@ pub fn elliptic_f(phi: f64, m: f64) -> f64 {
 
 /// Complex incomplete elliptic integral F(φ + iψ | m).
 /// Abramowitz and Stegun, 17.4.11.
+#[inline]
 pub fn elliptic_fi(phi: f64, psi: f64, m: f64) -> (f64, f64) {
     let r = phi.abs();
     let i = psi.abs();

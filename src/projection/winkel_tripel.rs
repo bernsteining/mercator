@@ -1,11 +1,16 @@
 use super::{prepare_lon_lat, Projection};
 
-fn default_std_parallel() -> f64 {
-    (2.0 / std::f64::consts::PI).acos()
-}
-
 pub struct WinkelTripel {
     pub central_meridian: f64,
+    /// Precomputed cos(standard_parallel) — avoids recomputing acos(2/π) + cos per point.
+    pub cos_phi1: f64,
+}
+
+impl WinkelTripel {
+    pub fn new(central_meridian: f64) -> Self {
+        let phi1 = (2.0 / std::f64::consts::PI).acos();
+        Self { central_meridian, cos_phi1: phi1.cos() }
+    }
 }
 
 impl Projection for WinkelTripel {
@@ -13,9 +18,8 @@ impl Projection for WinkelTripel {
         let (lambda, phi) = prepare_lon_lat(lon, lat, self.central_meridian);
 
         let cos_phi = phi.cos();
-        let phi1 = default_std_parallel();
 
-        let x_equi = lambda * phi1.cos();
+        let x_equi = lambda * self.cos_phi1;
         let y_equi = phi;
 
         let alpha = (cos_phi * (lambda / 2.0).cos()).clamp(-1.0, 1.0).acos();

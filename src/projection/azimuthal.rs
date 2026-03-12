@@ -24,6 +24,7 @@ pub struct AzimuthalPoint {
     pub cos_c: f64,
 }
 
+#[inline]
 pub fn intermediates(lon: f64, lat: f64, c: &AzimuthalCompiled) -> AzimuthalPoint {
     let phi = lat.to_radians();
     let delta_lon = (lon - c.center_lon).to_radians();
