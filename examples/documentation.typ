@@ -15,6 +15,7 @@
   },
 )
 #set text(font: "New Computer Modern")
+#set par(justify: true)
 #show heading.where(level: 3): set text(size: 1.17em)
 #show heading.where(level: 4): set text(size: 1.05em)
 
