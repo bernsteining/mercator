@@ -78,6 +78,8 @@
 == Quick start
 
 ```example
+#import "../mercator/mercator.typ": *
+
 #let sweden = read("data/swedish_regions.json", encoding: "utf8")
 #render-map(sweden, width: 80%)
 ```
@@ -129,9 +131,9 @@ All rendering options are passed as a JSON-encoded dictionary. Every field is op
 ```json
 {
   // --- Appearance ---
-  "stroke":       "black", // string – CSS color name or hex
+  "stroke":       "black", // string – "red", "#ff0000" for example
   "stroke_width": 0.05,    // float – border thickness
-  "fill":         "white", // string – CSS color name or hex
+  "fill":         "white", // string – "green", "#00ffbb" for example
   "fill_opacity": 1.0,     // float – 0.0 to 1.0 (transparent⟶opaque)
   "fill_pattern": null,    // "hatched" | "crosshatched" | "dotted"
   "point_radius": null,    // float – defaults to stroke_width × 5
@@ -597,8 +599,8 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       let geo_data = if "data" in proj { proj.data } else { world }
       let w = if "render_width" in proj { proj.render_width } else { 100% }
       if i > 0 { pagebreak() }
-      [==== #proj.name]
-      text(size: 8.5pt, style: "italic")[#proj.desc #link(proj.url)[\[Wikipedia\]]]
+      [==== #link(proj.url)[#proj.name]]
+      text(size: 8.5pt, style: "italic")[#proj.desc]
       align(center, render-map(geo_data, json.encode(proj.grat_config), width: w))
       if proj.params != none {
         text(size: 8pt, weight: "bold")[Parameters]
@@ -621,8 +623,8 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
 
   pagebreak()
   [=== Pseudo-azimuthal]
-  [==== Wiechel]
-  text(size: 8.5pt, style: "italic")[Invented by H. Wiechel in 1879. An equal-area azimuthal projection with a distinctive swirl: each meridian is a circular arc, giving the map a pinwheel-like appearance. One of the few projections that is both equal-area and visually striking. #link("https://en.wikipedia.org/wiki/Wiechel_projection")[\[Wikipedia\]]]
+  [==== #link("https://en.wikipedia.org/wiki/Wiechel_projection")[Wiechel]]
+  text(size: 8.5pt, style: "italic")[Invented by H. Wiechel in 1879. An equal-area azimuthal projection with a distinctive swirl: each meridian is a circular arc, giving the map a pinwheel-like appearance. One of the few projections that is both equal-area and visually striking.]
   align(center, render-map(world, json.encode((..conic_config, projection: (
     type: "wiechel", center_lat: 90, center_lon: 0,
   ), graticule: graticule)), width: 92%))
@@ -636,8 +638,8 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
 
   pagebreak()
   [=== Other]
-  [==== Peirce Quincuncial]
-  text(size: 8.5pt, style: "italic")[Published by Charles Sanders Peirce in 1879. Conformal: maps the entire globe onto a square using elliptic integrals. The north pole sits at the center, the south pole is split across the four corners, and the equator forms a diamond. Tessellates the plane. #link("https://en.wikipedia.org/wiki/Peirce_quincuncial_projection")[\[Wikipedia\]]]
+  [==== #link("https://en.wikipedia.org/wiki/Peirce_quincuncial_projection")[Peirce Quincuncial]]
+  text(size: 8.5pt, style: "italic")[Published by Charles Sanders Peirce in 1879. Conformal: maps the entire globe onto a square using elliptic integrals. The north pole sits at the center, the south pole is split across the four corners, and the equator forms a diamond. Tessellates the plane.]
   align(center, render-map(world, json.encode((..conic_config, projection: (
     type: "peirce_quincuncial",
   ), graticule: graticule)), width: 92%))
@@ -649,8 +651,8 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
   )
 
   pagebreak()
-  [==== AuthaGraph]
-  text(size: 8.5pt, style: "italic")[Invented by Hajime Narukawa in 1999. Maps the sphere onto a tetrahedron, then unfolds it into a rectangle. Nearly equal-area with minimal shape distortion, distributing errors at four oceanic points. The original formulas are proprietary; this is Kunimune's open-source approximation. #link("https://en.wikipedia.org/wiki/AuthaGraph_projection")[\[Wikipedia\]]]
+  [==== #link("https://en.wikipedia.org/wiki/AuthaGraph_projection")[AuthaGraph]]
+  text(size: 8.5pt, style: "italic")[Invented by Hajime Narukawa in 1999. Maps the sphere onto a tetrahedron, then unfolds it into a rectangle. Nearly equal-area with minimal shape distortion, distributing errors at four oceanic points. The original formulas are proprietary; this is Kunimune's open-source approximation.]
   align(center,
     render-map(world, json.encode((..conic_config, projection: (
       type: "authagraph",
