@@ -1,6 +1,6 @@
 # mercator
 
-![logo](examples/data/logo.png)
+![logo](https://github.com/bernsteining/mercator/blob/v0.1.2/examples/data/logo.png)
 
 Mercator is a Typst plugin to render GeoJSON and TopoJSON as SVG maps.
 
@@ -23,7 +23,7 @@ Mercator is a Typst plugin to render GeoJSON and TopoJSON as SVG maps.
 
 ## documentation
 
-Check [examples/documentation.pdf](examples/documentation.pdf), it covers all the features with examples.
+Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob/v0.1.2/examples/documentation.pdf), it covers all the features with examples.
 
 ## config options
 
