@@ -21,9 +21,9 @@
 
 // --- Data ---
 
-#let sweden = read("data/swedish_regions.json", encoding: "utf8")
-#let world = read("data/world.json", encoding: "utf8")
-#let world_no_ant = read("data/world_no_antartica.json", encoding: "utf8")
+#let sweden = read("data/swedish_regions.json", encoding: none)
+#let world = read("data/world.json", encoding: none)
+#let world_no_ant = read("data/world_no_antartica.json", encoding: none)
 
 // --- Example helper ---
 // Show rule that displays a code block and executes it.
@@ -41,14 +41,14 @@
 // --- Hero ---
 
 #let hero_data = world
-#let hero_config = json.encode((
+#let hero_config = (
   stroke: "white",
   stroke_width: 0.001,
   fill: "steelblue",
   fill_opacity: 0.85,
   projection: (type: "orthographic", center_lat: 45, center_lon: 10),
   graticule: (step: 15, color: "red", opacity: 0.5),
-))
+)
 
 #set page(numbering: none) // no number on cover
 #align(center + horizon)[
@@ -81,13 +81,13 @@
 ```example
 #import "../mercator/mercator.typ": *
 
-#let sweden = read("data/swedish_regions.json", encoding: "utf8")
+#let sweden = read("data/swedish_regions.json", encoding: none)
 #render-map(sweden, width: 80%)
 ```
 
 The `render-map` function takes two positional arguments:
 - `data` — GeoJSON or TopoJSON string
-- `config` — JSON-encoded configuration string (optional)
+- `config` — configuration dictionary (optional)
 
 All additional named arguments (`width`, `height`, `fit`, `alt`) are forwarded to Typst's built-in `image` function.
 
@@ -127,18 +127,18 @@ Mercator handles all standard GeoJSON geometry types:
 
 == Configuration overview
 
-All rendering options are passed as a JSON-encoded dictionary. Every field is optional and defaults to the value shown below. Fields marked with `{property}` support per-feature interpolation from GeoJSON properties. (cf. per-feature styling section)
+All rendering options are passed as a Typst dictionary. Every field is optional and defaults to the value shown below. Fields marked with `{property}` support per-feature interpolation from GeoJSON properties. (cf. per-feature styling section)
 
-```json
+#code-block(text(size: 7pt, raw(block: true, lang: "json", ```
 {
   // --- Appearance ---
-  "stroke":       "black", // string – "red", "#ff0000" for example
-  "stroke_width": 0.05,    // float – border thickness
-  "fill":         "white", // string – "green", "#00ffbb" for example
-  "fill_opacity": 1.0,     // float – 0.0 to 1.0 (transparent⟶opaque)
-  "fill_pattern": null,    // "hatched" | "crosshatched" | "dotted"
-  "point_radius": null,    // float – defaults to stroke_width × 5
-  "point_color":  null,    // string – defaults to fill; "none" hides points
+  "stroke":       "black",     // string – "red", "#ff0000" for example
+  "stroke_width": 0.05,        // float – border thickness
+  "fill":         "white",     // string – "green", "#00ffbb" for example
+  "fill_opacity": 1.0,         // float – 0.0 to 1.0 (transparent⟶opaque)
+  "fill_pattern": null,        // "hatched" | "crosshatched" | "dotted"
+  "point_radius": null,        // float – defaults to stroke_width × 5
+  "point_color":  null,        // string – defaults to fill; "none" hides points
 
   // --- Labels ---
   "label":             null,    // string "{name}" or array of line objects
@@ -147,14 +147,14 @@ All rendering options are passed as a JSON-encoded dictionary. Every field is op
   "label_font_family": "Arial", // string
 
   // --- Viewbox ---
-  "viewbox":         null,  // [x, y, width, height] – auto-computed if null
-  "viewbox_padding": 0.15,  // float – padding fraction around auto viewbox
+  "viewbox":         null,      // [x, y, width, height] – auto-computed if null
+  "viewbox_padding": 0.15,      // float – padding fraction around auto viewbox
 
-  "projection": null,  // object, see Projections section
-  "graticule": null,   // object, see Graticule section
-  "tissot": null       // object, see Tissot's Indicatrix section
+  "projection": null,           // object, see Projections section
+  "graticule": null,            // object, see Graticule section
+  "tissot": null                // object, see Tissot's Indicatrix section
 }
-```
+```.text)))
 
 #pagebreak()
 
@@ -172,24 +172,24 @@ To control the map appearance, configure:
   gutter: 1em,
   [
     ```example
-    #render-map(sweden, json.encode((
+    #render-map(sweden, (
       stroke: "white",
       stroke_width: 0.01,
       fill: "teal",
       fill_opacity: 0.8,
       point_color: "none",
-    )), width: 100%)
+    ), width: 100%)
     ```
   ],
   [
     ```example
-    #render-map(sweden, json.encode((
+    #render-map(sweden, (
       stroke: "#333",
       stroke_width: 0.08,
       fill: "#f7fc0f",
       fill_opacity: 0.2,
       point_color: "none",
-    )), width: 100%)
+    ), width: 100%)
     ```
   ],
 )
@@ -201,15 +201,15 @@ By default, the viewbox is auto-computed from the GeoJSON bounds with a 10% padd
 #grid(
   columns: (1fr, 1fr),
   gutter: 1em,
-  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, json.encode((\n  stroke: \"black\",\n  stroke_width: 0.02,\n  fill: \"grey\",\n  fill_opacity: 0.5,\n  viewbox: array((15.0, -69.4, 10.0, 6.0)),\n  point_color: \"none\",\n)), width: 70%)"))),
-  align(center + horizon, render-map(sweden, json.encode((
+  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, (\n  stroke: \"black\",\n  stroke_width: 0.02,\n  fill: \"grey\",\n  fill_opacity: 0.5,\n  viewbox: array((15.0, -69.4, 10.0, 6.0)),\n  point_color: \"none\",\n), width: 70%)"))),
+  align(center + horizon, render-map(sweden, (
     stroke: "black",
     stroke_width: 0.02,
     fill: "grey",
     fill_opacity: 0.5,
     viewbox: array((15.0, -69.4, 10.0, 6.0)),
     point_color: "none",
-  )), width: 70%)),
+  ), width: 70%)),
 )
 
 #pagebreak()
@@ -220,7 +220,7 @@ By default, the viewbox is auto-computed from the GeoJSON bounds with a 10% padd
 Set `label` to a string template with `{property_name}` placeholders.
 
 ```example
-#render-map(sweden, json.encode((
+#render-map(sweden, (
     stroke: "white",
     stroke_width: 0.03,
     fill: "steelblue",
@@ -229,7 +229,7 @@ Set `label` to a string template with `{property_name}` placeholders.
     label: "{name}",
     label_color: "black",
     label_font_size: 0.25,
-  )), width: 80%)
+  ), width: 80%)
 ```
 
 #pagebreak()
@@ -239,7 +239,7 @@ Set `label` to a string template with `{property_name}` placeholders.
 Pass an array of label line objects instead of a string. Each line can have its own `text`, `font_size`, `color`, and `font_family`.
 
 ```example
-#render-map(sweden, json.encode((
+#render-map(sweden, (
     stroke: "white",
     stroke_width: 0.03,
     fill: "steelblue",
@@ -249,7 +249,7 @@ Pass an array of label line objects instead of a string. Each line can have its 
       (text: "{name}", font_size: 0.25, color: "black"),
       (text: "#{l_id}", font_size: 0.15, color: "red"),
     ),
-  )), width: 80%)
+  ), width: 80%)
 ```
 
 _NB: GeoJSON `Feature.id` is automatically available as `{id}` in templates, even if it's not part of the feature's `properties`._
@@ -261,7 +261,7 @@ _NB: GeoJSON `Feature.id` is automatically available as `{id}` in templates, eve
 `Point` and `MultiPoint` geometries are rendered as circles. Use `point_radius` to control their size (defaults to `stroke_width × 5`).
 
 ```example
-#render-map(sweden, json.encode((
+#render-map(sweden, (
     stroke: "black",
     stroke_width: 0.02,
     fill: "white",
@@ -270,7 +270,7 @@ _NB: GeoJSON `Feature.id` is automatically available as `{id}` in templates, eve
     label: "{point}",
     label_color: "red",
     label_font_size: 0.6,
-  )), width: 80%)
+  ), width: 80%)
 ```
 
 #pagebreak()
@@ -282,14 +282,14 @@ Use `{property_name}` in `stroke`, `fill`, or `fill_pattern` to resolve values f
 Use `fill_pattern` with `"hatched"`, `"crosshatched"`, or `"dotted"`. The pattern uses the `fill` color. Supports per-feature interpolation via `{property_name}` — features without the property get a solid fill.
 
 ```example
-#render-map(sweden, json.encode((
+#render-map(sweden, (
     stroke: "black",
     stroke_width: 0.02,
     fill: "{fill_color}",
     fill_opacity: 0.9,
     fill_pattern: "{pattern}",
     point_color: "none",
-  )), width: 80%)
+  ), width: 80%)
 ```
 
 #pagebreak()
@@ -312,13 +312,13 @@ A *graticule* draws a grid of meridians (longitude) and parallels (latitude) on 
   columns: (1fr, 1fr),
   gutter: 1em,
   [
-    #render-map(world, json.encode(ortho_base), width: 100%)
+    #render-map(world, ortho_base, width: 100%)
     #align(center, text(size: 8pt)[Without graticule])
   ],
   [
-    #render-map(world, json.encode((..ortho_base,
+    #render-map(world, (..ortho_base,
       graticule: (step: 15, color: "red", opacity: 0.5),
-    )), width: 100%)
+    ), width: 100%)
     #align(center, text(size: 8pt)[With graticule])
   ],
 )
@@ -335,12 +335,12 @@ The following examples of projections will use a graticule to visually represent
 
 On a *conformal* projection (like Mercator), circles stay circular but grow near the poles. On an *equal-area* projection (like Albers), circles keep the same area but get squished. On a *compromise* projection (like Robinson), both shape and area change.
 
-#align(center, render-map(world, json.encode((
+#align(center, render-map(world, (
   projection: (type: "mercator"),
   stroke: "#aaa", stroke_width: 0.01, fill: "none",
   graticule: (step: 30, color: "#ddd", opacity: 0.4, width: 0.2),
   tissot: (step: 30, radius: 5, fill: "red", fill_opacity: 0.4, stroke: "darkred", stroke_width: 0.3),
-)), width: 80%))
+), width: 80%))
 
 #code-block(text(size: 7pt, raw(block: true, lang: "typst", "tissot: (\n  step: 30,          // degrees between circles (default: 30)\n  radius: 5,         // circle radius in degrees (default: 5)\n  fill: \"red\",       // fill color (default: \"red\")\n  fill_opacity: 0.3, // fill opacity (default: 0.3)\n  stroke: \"red\",     // stroke color (default: \"red\")\n  stroke_width: 0.5, // stroke width (default: 0.5)\n  max_lat: 60,       // maximum latitude in degrees (default: 60)\n)")))
 
@@ -370,7 +370,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Equirectangular_projection",
       desc: "The simplest projection: longitude and latitude map directly to x and y. Attributed to Marinus of Tyre (c. 100 AD). Neither conformal nor equal-area, but trivial to compute and widely used as a baseline.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#let world = read(\"data/world.json\", encoding: \"utf8\")\n#render-map(world, json.encode((\n  graticule: (step: 15),\n)))",
+      code: "#let world = read(\"data/world.json\", encoding: none)\n#render-map(world, (\n  graticule: (step: 15),\n))",
     ),
     (
       category: "Cylindrical",
@@ -380,7 +380,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Mercator_projection",
       desc: "Introduced by Gerardus Mercator in 1569 for nautical navigation. Conformal: preserves local angles and shapes, so any straight line is a constant-bearing rhumb line. Extreme area distortion near the poles.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"mercator\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"mercator\",\n    central_meridian: 0,\n  ),\n))",
     ),
     (
       category: "Cylindrical",
@@ -391,7 +391,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Cassini_projection",
       desc: "Developed by C\u{e9}sar-Fran\u{e7}ois Cassini de Thury in 1745 for the triangulation of France. A transverse equirectangular projection: the central meridian plays the role of the equator. Useful for mapping narrow north-south strips.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"cassini\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"cassini\",\n    central_meridian: 0,\n  ),\n))",
     ),
     // --- Conic ---
     (
@@ -414,7 +414,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "central_meridian", typ: "float", default: "0"),
         (name: "latitude_of_origin", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"lambert_conformal_conic\",\n    standard_parallel_1: 30,\n    standard_parallel_2: 60,\n    central_meridian: 10,\n    latitude_of_origin: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"lambert_conformal_conic\",\n    standard_parallel_1: 30,\n    standard_parallel_2: 60,\n    central_meridian: 10,\n    latitude_of_origin: 0,\n  ),\n))",
     ),
     (
       category: "Conic",
@@ -436,7 +436,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "central_meridian", typ: "float", default: "0"),
         (name: "latitude_of_origin", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"albers_equal_area\",\n    standard_parallel_1: 30,\n    standard_parallel_2: 60,\n    central_meridian: 10,\n    latitude_of_origin: 40,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"albers_equal_area\",\n    standard_parallel_1: 30,\n    standard_parallel_2: 60,\n    central_meridian: 10,\n    latitude_of_origin: 40,\n  ),\n))",
     ),
     // --- Pseudo-conic ---
     (
@@ -456,7 +456,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "standard_parallel", typ: "float", default: "45"),
         (name: "central_meridian", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"bonne\",\n    standard_parallel: 45,\n    central_meridian: 10,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"bonne\",\n    standard_parallel: 45,\n    central_meridian: 10,\n  ),\n))",
     ),
     (
       category: "Pseudo-conic",
@@ -473,7 +473,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       params: (
         (name: "central_meridian", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"polyconic\",\n    central_meridian: 10,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"polyconic\",\n    central_meridian: 10,\n  ),\n))",
     ),
     // --- Pseudo-cylindrical ---
     (
@@ -484,7 +484,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Robinson_projection",
       desc: "Created by Arthur H. Robinson in 1963 for Rand McNally. A compromise projection: neither conformal nor equal-area, but visually pleasing with moderate distortion everywhere. Used by National Geographic from 1988 to 1998.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"robinson\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"robinson\",\n    central_meridian: 0,\n  ),\n))",
     ),
     (
       category: "Pseudo-cylindrical",
@@ -494,7 +494,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Natural_Earth_projection",
       desc: "Designed by Tom Patterson in 2008 for the Natural Earth dataset. A compromise projection similar to Robinson but with smoother, rounder corners. Adopted by many open-source mapping tools as a default world view.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"natural_earth\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"natural_earth\",\n    central_meridian: 0,\n  ),\n))",
     ),
     (
       category: "Pseudo-cylindrical",
@@ -504,7 +504,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Hammer_projection",
       desc: "Developed by Ernst Hammer in 1892 as a modification of the Aitoff projection. Equal-area: maps the entire globe into an ellipse with a 2:1 axis ratio. Meridians are curved, equally spaced along the equator. Widely used for whole-world maps in atlases.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"hammer\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"hammer\",\n    central_meridian: 0,\n  ),\n))",
     ),
     (
       category: "Pseudo-cylindrical",
@@ -514,7 +514,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       url: "https://en.wikipedia.org/wiki/Winkel_tripel_projection",
       desc: "Created by Oswald Winkel in 1921. A compromise projection computed as the arithmetic mean of equirectangular and Aitoff projections. Minimizes the sum of distortions in area, direction, and distance --- hence \"tripel\" (German for triple). Adopted by the National Geographic Society in 1998 as their standard world map projection.",
       params: ((name: "central_meridian", typ: "float", default: "0"),),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"winkel_tripel\",\n    central_meridian: 0,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"winkel_tripel\",\n    central_meridian: 0,\n  ),\n))",
     ),
     // --- Azimuthal ---
     (
@@ -533,7 +533,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "center_lat", typ: "float", default: "0"),
         (name: "center_lon", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"lambert_azimuthal_equal_area\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"lambert_azimuthal_equal_area\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n))",
     ),
     (
       category: "Azimuthal",
@@ -552,7 +552,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "center_lat", typ: "float", default: "0"),
         (name: "center_lon", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"gnomonic\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"gnomonic\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n))",
     ),
     (
       category: "Azimuthal",
@@ -569,7 +569,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "center_lat", typ: "float", default: "0"),
         (name: "center_lon", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"orthographic\",\n    center_lat: 45,\n    center_lon: 10))))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"orthographic\",\n    center_lat: 45,\n    center_lon: 10)))",
     ),
     (
       category: "Azimuthal",
@@ -587,7 +587,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
         (name: "center_lat", typ: "float", default: "0"),
         (name: "center_lon", typ: "float", default: "0"),
       ),
-      code: "#render-map(world, json.encode((\n  projection: (\n    type: \"azimuthal_equidistant\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n)))",
+      code: "#render-map(world, (\n  projection: (\n    type: \"azimuthal_equidistant\",\n    center_lat: 45,\n    center_lon: 10,\n  ),\n))",
     ),
   )
 
@@ -602,7 +602,7 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
       if i > 0 { pagebreak() }
       [==== #link(proj.url)[#proj.name]]
       text(size: 8.5pt, style: "italic")[#proj.desc]
-      align(center, render-map(geo_data, json.encode(proj.grat_config), width: w))
+      align(center, render-map(geo_data, proj.grat_config, width: w))
       if proj.params != none {
         text(size: 8pt, weight: "bold")[Parameters]
         for p in proj.params {
@@ -626,42 +626,45 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
   [=== Pseudo-azimuthal]
   [==== #link("https://en.wikipedia.org/wiki/Wiechel_projection")[Wiechel]]
   text(size: 8.5pt, style: "italic")[Invented by H. Wiechel in 1879. An equal-area azimuthal projection with a distinctive swirl: each meridian is a circular arc, giving the map a pinwheel-like appearance. One of the few projections that is both equal-area and visually striking.]
-  align(center, render-map(world, json.encode((..conic_config, projection: (
+  align(center, render-map(world, (..conic_config, projection: (
     type: "wiechel", center_lat: 90, center_lon: 0,
-  ), graticule: graticule)), width: 92%))
+  ), graticule: graticule), width: 92%))
   text(size: 8pt, weight: "bold")[Parameters]
   [- #text(size: 8pt)[#raw("center_lat") _(float, default: 0)_]]
   [- #text(size: 8pt)[#raw("center_lon") _(float, default: 0)_]]
   block(
     width: 100%, inset: 8pt, radius: 3pt, fill: luma(245), stroke: 0.5pt + luma(200),
-    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, json.encode((\n  projection: (\n    type: \"wiechel\",\n    center_lat: 90,\n    center_lon: 0,\n  ),\n)), width: 100%)"))
+    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, (\n  projection: (\n    type: \"wiechel\",\n    center_lat: 90,\n    center_lon: 0,\n  ),\n), width: 100%)"))
+
   )
 
   pagebreak()
   [=== Other]
   [==== #link("https://en.wikipedia.org/wiki/Peirce_quincuncial_projection")[Peirce Quincuncial]]
   text(size: 8.5pt, style: "italic")[Published by Charles Sanders Peirce in 1879. Conformal: maps the entire globe onto a square using elliptic integrals. The north pole sits at the center, the south pole is split across the four corners, and the equator forms a diamond. Tessellates the plane.]
-  align(center, render-map(world, json.encode((..conic_config, projection: (
+  align(center, render-map(world, (..conic_config, projection: (
     type: "peirce_quincuncial",
-  ), graticule: graticule)), width: 92%))
+  ), graticule: graticule), width: 92%))
   text(size: 8pt, weight: "bold")[Parameters]
   [- #text(size: 8pt)[#raw("center_lon") _(float, default: 0)_]]
   block(
     width: 100%, inset: 8pt, radius: 3pt, fill: luma(245), stroke: 0.5pt + luma(200),
-    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, json.encode((\n  projection: (\n    type: \"peirce_quincuncial\",\n    center_lon: 0,\n  ),\n)))"))
+    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, (\n  projection: (\n    type: \"peirce_quincuncial\",\n    center_lon: 0,\n  ),\n))"))
+
   )
 
   pagebreak()
   [==== #link("https://en.wikipedia.org/wiki/AuthaGraph_projection")[AuthaGraph]]
   text(size: 8.5pt, style: "italic")[Invented by Hajime Narukawa in 1999. Maps the sphere onto a tetrahedron, then unfolds it into a rectangle. Nearly equal-area with minimal shape distortion, distributing errors at four oceanic points. The original formulas are proprietary; this is Kunimune's open-source approximation.]
   align(center,
-    render-map(world, json.encode((..conic_config, projection: (
+    render-map(world, (..conic_config, projection: (
       type: "authagraph",
-    ), graticule: (step: 10, color: "red", opacity: 0.5))), width: 100%, height: 50%)
+    ), graticule: (step: 10, color: "red", opacity: 0.5)), width: 100%, height: 50%)
   )
   block(
     width: 100%, inset: 8pt, radius: 3pt, fill: luma(245), stroke: 0.5pt + luma(200),
-    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, json.encode((\n  projection: (\n    type: \"authagraph\",\n  ),\n))"))
+    text(size: 7pt, raw(block: true, lang: "typst", "#render-map(world, (\n  projection: (\n    type: \"authagraph\",\n  ),\n))"))
+
   )
 }
 
@@ -674,8 +677,8 @@ Combining projection, graticule, Tissot's indicatrix, per-feature styling, fill 
 #grid(
   columns: (1fr, 1fr),
   gutter: 1em,
-  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, json.encode((\n  stroke: \"white\",\n  stroke_width: 0.01,\n  fill: \"{fill_color}\",\n  fill_opacity: 0.8,\n  fill_pattern: \"{pattern}\",\n  point_radius: 0.15,\n  point_color: \"magenta\",\n  label: (\n    (text: \"{point}\", font_size: 0.40,\n     color: \"black\",\n     font_family: \"New Computer Modern\"),\n    (text: \"id: {l_id}\", font_size: 0.12,\n     color: \"red\"),\n  ),\n  projection: (\n    type: \"mercator\",\n    central_meridian: 16,\n  ),\n  viewbox: (-6.4, -74.4, 10, 10),\n  graticule: (step: 2, color: \"#ccc\",\n    opacity: 0.4, width: 0.3),\n  tissot: (step: 3.3, radius: 0.5,\n    fill: \"red\", fill_opacity: 0.2,\n    max_lat: 80),\n)), width: 100%)"))),
-  render-map(sweden, json.encode((
+  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, (\n  stroke: \"white\",\n  stroke_width: 0.01,\n  fill: \"{fill_color}\",\n  fill_opacity: 0.8,\n  fill_pattern: \"{pattern}\",\n  point_radius: 0.15,\n  point_color: \"magenta\",\n  label: (\n    (text: \"{point}\", font_size: 0.40,\n     color: \"black\",\n     font_family: \"New Computer Modern\"),\n    (text: \"id: {l_id}\", font_size: 0.12,\n     color: \"red\"),\n  ),\n  projection: (\n    type: \"mercator\",\n    central_meridian: 16,\n  ),\n  viewbox: (-6.4, -74.4, 10, 10),\n  graticule: (step: 2, color: \"#ccc\",\n    opacity: 0.4, width: 0.3),\n  tissot: (step: 3.3, radius: 0.5,\n    fill: \"red\", fill_opacity: 0.2,\n    max_lat: 80),\n), width: 100%)"))),
+  render-map(sweden, (
     stroke: "white",
     stroke_width: 0.01,
     fill: "{fill_color}",
@@ -694,5 +697,5 @@ Combining projection, graticule, Tissot's indicatrix, per-feature styling, fill 
     viewbox: (-6.4, -74.4, 10, 10),
     graticule: (step: 2, color: "#ccc", opacity: 0.4, width: 0.3),
     tissot: (step: 3.3, radius: 0.5, fill: "red", fill_opacity: 0.2, max_lat: 80),
-  )), width: 100%),
+  ), width: 100%),
 )

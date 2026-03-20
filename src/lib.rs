@@ -12,34 +12,68 @@ mod topojson_convert;
 use wasm_minimal_protocol::*;
 
 use geojson::GeoJson;
-use svg::node::element::{Circle, Group, Path};
-use svg::Document;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use geometry::{
-    compute_viewbox, first_altitude, geometry_centroid, render_geometry, RenderOutput,
+    first_altitude, push_f64, render_geometry, BoundsAccumulator, Centroid, RenderOutput,
 };
-use label::{add_label, build_labels};
-use pattern::{resolve_fill, PatternDefs};
-use projection::project_geojson;
+use label::{build_labels, write_label};
+use pattern::{write_fill, PatternDefs};
+use projection::Proj;
 use style::{resolve_style, GraticuleConfig, LabelInstance, ResolvedStyle, StyleConfig};
 
 initiate_protocol!();
 
+thread_local! {
+    static GEOJSON_CACHE: RefCell<HashMap<u64, GeoJson>> = RefCell::new(HashMap::new());
+}
+
+fn hash_bytes(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn with_parsed_geojson<R>(data: &[u8], f: impl FnOnce(&GeoJson) -> R) -> Result<R, String> {
+    let key = hash_bytes(data);
+    GEOJSON_CACHE.with(|cache| {
+        {
+            let map = cache.borrow();
+            if let Some(cached) = map.get(&key) {
+                return Ok(f(cached));
+            }
+        }
+        let content = std::str::from_utf8(data).map_err(|e| e.to_string())?;
+        let parsed = match content.parse::<GeoJson>() {
+            Ok(gj) => gj,
+            Err(_) => topojson_convert::try_topojson(content)?,
+        };
+        cache.borrow_mut().insert(key, parsed);
+        let map = cache.borrow();
+        Ok(f(map.get(&key).unwrap()))
+    })
+}
+
 const DEFAULT_VIEWBOX_PADDING: f64 = 0.15;
-const FALLBACK_VIEWBOX: (f64, f64, f64, f64) = (0.0, 0.0, 100.0, 100.0);
 const GRATICULE_WIDTH_SCALE: f64 = 1000.0;
 
 fn render_feature(
-    group: Group,
+    svg: &mut String,
     feat: &geojson::Feature,
     labels: &mut Vec<LabelInstance>,
     config: &StyleConfig,
     patterns: &mut PatternDefs,
-    max_gap: f64,
-) -> Group {
+    out: &mut RenderOutput,
+    proj: &Proj,
+    bounds: &mut BoundsAccumulator,
+) {
     let geom = match feat.geometry.as_ref() {
         Some(g) => g,
-        None => return group,
+        None => return,
     };
 
     let empty = serde_json::Map::new();
@@ -74,11 +108,12 @@ fn render_feature(
     };
     let style = resolve_style(config, Some(properties));
 
-    let mut out = RenderOutput { max_gap, ..Default::default() };
-    render_geometry(&mut out, &geom.value);
-    let group = add_geometry_to_group(group, out, &style, patterns);
+    out.clear();
+    let mut centroid = Centroid::new();
+    render_geometry(out, &geom.value, proj, bounds, &mut centroid);
+    write_geometry(svg, out, &style, patterns);
 
-    if let Some((mut cx, cy)) = geometry_centroid(&geom.value) {
+    if let Some((mut cx, cy)) = centroid.get() {
         let is_point = matches!(geom.value, geojson::Value::Point(_) | geojson::Value::MultiPoint(_));
         if is_point {
             let r = config.point_radius.unwrap_or(config.stroke_width * 5.0);
@@ -86,36 +121,36 @@ fn render_feature(
         }
         build_labels(labels, config, &properties, cx, cy, is_point);
     }
-
-    group
 }
 
-fn add_geometry_to_group(
-    mut group: Group,
-    out: RenderOutput,
-    style: &ResolvedStyle,
+fn write_geometry(
+    svg: &mut String,
+    out: &RenderOutput,
+    style: &ResolvedStyle<'_>,
     patterns: &mut PatternDefs,
-) -> Group {
+) {
     if !out.polygon_data.is_empty() {
-        let fill = resolve_fill(style, patterns);
-        group = group.add(
-            Path::new()
-                .set("fill", &*fill)
-                .set("fill-opacity", style.fill_opacity)
-                .set("stroke", &*style.stroke)
-                .set("stroke-width", style.stroke_width)
-                .set("d", out.polygon_data),
-        );
+        svg.push_str(r#"<path fill=""#);
+        write_fill(svg, style, patterns);
+        svg.push_str(r#"" fill-opacity=""#);
+        push_f64(svg, style.fill_opacity);
+        svg.push_str(r#"" stroke=""#);
+        svg.push_str(&style.stroke);
+        svg.push_str(r#"" stroke-width=""#);
+        push_f64(svg, style.stroke_width);
+        svg.push_str(r#"" d=""#);
+        svg.push_str(&out.polygon_data);
+        svg.push_str(r#""/>"#);
     }
 
     if !out.line_data.is_empty() {
-        group = group.add(
-            Path::new()
-                .set("fill", "none")
-                .set("stroke", &*style.stroke)
-                .set("stroke-width", style.stroke_width)
-                .set("d", out.line_data),
-        );
+        svg.push_str(r#"<path fill="none" stroke=""#);
+        svg.push_str(&style.stroke);
+        svg.push_str(r#"" stroke-width=""#);
+        push_f64(svg, style.stroke_width);
+        svg.push_str(r#"" d=""#);
+        svg.push_str(&out.line_data);
+        svg.push_str(r#""/>"#);
     }
 
     let point_fill = style.point_color.as_deref().unwrap_or(&style.fill);
@@ -124,68 +159,81 @@ fn add_geometry_to_group(
             if x.is_nan() || y.is_nan() {
                 continue;
             }
-            group = group.add(
-                Circle::new()
-                    .set("cx", *x)
-                    .set("cy", *y)
-                    .set("r", style.point_radius)
-                    .set("fill", point_fill)
-                    .set("fill-opacity", style.fill_opacity)
-                    .set("stroke", &*style.stroke)
-                    .set("stroke-width", style.stroke_width),
-            );
+            svg.push_str(r#"<circle cx=""#);
+            push_f64(svg, *x);
+            svg.push_str(r#"" cy=""#);
+            push_f64(svg, *y);
+            svg.push_str(r#"" r=""#);
+            push_f64(svg, style.point_radius);
+            svg.push_str(r#"" fill=""#);
+            svg.push_str(point_fill);
+            svg.push_str(r#"" fill-opacity=""#);
+            push_f64(svg, style.fill_opacity);
+            svg.push_str(r#"" stroke=""#);
+            svg.push_str(&style.stroke);
+            svg.push_str(r#"" stroke-width=""#);
+            push_f64(svg, style.stroke_width);
+            svg.push_str(r#""/>"#);
         }
     }
-
-    group
 }
 
 #[wasm_func]
 pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     let mut conf: StyleConfig = serde_json::from_slice(config).unwrap_or_default();
 
-    let content = std::str::from_utf8(geojson).map_err(|e| e.to_string())?;
-    let mut geojson = match content.parse::<GeoJson>() {
-        Ok(gj) => gj,
-        Err(_) => topojson_convert::try_topojson(content)?,
-    };
-
     let proj = projection::from_config(conf.projection.take());
-    project_geojson(&mut geojson, &*proj);
-
-    if conf.viewbox.is_none() {
-        let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
-        conf.viewbox = Some(compute_viewbox(&geojson, padding));
-    }
-
-    let viewbox = conf.viewbox.unwrap_or(FALLBACK_VIEWBOX);
     let max_gap = proj.antimeridian_gap();
-    let mut doc = Document::new().set("viewBox", viewbox);
-    let mut group = Group::new();
+
     let mut labels: Vec<LabelInstance> = Vec::new();
     let mut patterns = PatternDefs::new();
+    let mut geo_buf = String::new();
+    let mut bounds = BoundsAccumulator::new();
+    let mut out = RenderOutput { max_gap, ..Default::default() };
 
-    match geojson {
-        GeoJson::FeatureCollection(fc) => {
-            for feat in &fc.features {
-                group = render_feature(group, feat, &mut labels, &conf, &mut patterns, max_gap);
+    // Single pass: render features with on-the-fly projection, accumulating bounds + centroids
+    with_parsed_geojson(geojson, |geojson| {
+        match geojson {
+            GeoJson::FeatureCollection(fc) => {
+                for feat in &fc.features {
+                    render_feature(&mut geo_buf, feat, &mut labels, &conf, &mut patterns, &mut out, &proj, &mut bounds);
+                }
+            }
+            GeoJson::Feature(ref feat) => {
+                render_feature(&mut geo_buf, feat, &mut labels, &conf, &mut patterns, &mut out, &proj, &mut bounds);
+            }
+            GeoJson::Geometry(ref geom) => {
+                let style = resolve_style(&conf, None);
+                out.clear();
+                let mut centroid = Centroid::new();
+                render_geometry(&mut out, &geom.value, &proj, &mut bounds, &mut centroid);
+                write_geometry(&mut geo_buf, &out, &style, &mut patterns);
             }
         }
-        GeoJson::Feature(ref feat) => {
-            group = render_feature(group, feat, &mut labels, &conf, &mut patterns, max_gap);
-        }
-        GeoJson::Geometry(ref geom) => {
-            let style = resolve_style(&conf, None);
-            let mut out = RenderOutput { max_gap, ..Default::default() };
-            render_geometry(&mut out, &geom.value);
-            group = add_geometry_to_group(group, out, &style, &mut patterns);
-        }
-    }
+    })?;
 
+    let viewbox = conf.viewbox.unwrap_or_else(|| {
+        let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
+        bounds.viewbox(padding)
+    });
+
+    let mut svg = String::with_capacity(32768);
+    svg.push_str(r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox=""#);
+    push_f64(&mut svg, viewbox.0);
+    svg.push(' ');
+    push_f64(&mut svg, viewbox.1);
+    svg.push(' ');
+    push_f64(&mut svg, viewbox.2);
+    svg.push(' ');
+    push_f64(&mut svg, viewbox.3);
+    svg.push_str(r#"">"#);
+
+    // Defs (patterns) must come before geometry references
     if patterns.has_patterns() {
-        doc = doc.add(patterns.defs);
+        patterns.write_defs(&mut svg);
     }
 
+    // Graticule
     if let Some(ref grat) = conf.graticule {
         let vb_diag = (viewbox.2.powi(2) + viewbox.3.powi(2)).sqrt();
         let scaled_grat = GraticuleConfig {
@@ -194,11 +242,13 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
             width: grat.width * vb_diag / GRATICULE_WIDTH_SCALE,
             opacity: grat.opacity,
         };
-        doc = doc.add(graticule::render(&*proj, &scaled_grat, max_gap));
+        svg.push_str(&graticule::render(&proj, &scaled_grat, max_gap));
     }
 
-    doc = doc.add(group);
+    // Feature geometry
+    svg.push_str(&geo_buf);
 
+    // Tissot indicatrices
     if let Some(ref tis) = conf.tissot {
         let vb_diag = (viewbox.2.powi(2) + viewbox.3.powi(2)).sqrt();
         let scaled = style::TissotConfig {
@@ -210,14 +260,14 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
             stroke_width: tis.stroke_width * vb_diag / GRATICULE_WIDTH_SCALE,
             max_lat: tis.max_lat,
         };
-        doc = doc.add(tissot::render(&*proj, &scaled, max_gap));
+        svg.push_str(&tissot::render(&proj, &scaled, max_gap));
     }
 
+    // Labels
     for label in &labels {
-        doc = add_label(doc, label);
+        write_label(&mut svg, label);
     }
 
-    let mut buf = Vec::new();
-    svg::write(&mut buf, &doc).map_err(|e| e.to_string())?;
-    Ok(buf)
+    svg.push_str("</svg>");
+    Ok(svg.into_bytes())
 }

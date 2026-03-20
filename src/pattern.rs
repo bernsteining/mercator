@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use svg::node::element::{Circle, Definitions, Line, Pattern};
 
+use crate::geometry::push_f64;
 use crate::style::ResolvedStyle;
 
 const PATTERN_CELL_MULTIPLIER: f64 = 3.0;
@@ -11,7 +11,7 @@ const SVG_ROUND_FACTOR: f64 = 1000.0;
 
 pub struct PatternDefs {
     patterns: HashMap<(String, String), String>,
-    pub defs: Definitions,
+    buf: String,
     counter: usize,
 }
 
@@ -19,7 +19,7 @@ impl PatternDefs {
     pub fn new() -> Self {
         Self {
             patterns: HashMap::new(),
-            defs: Definitions::new(),
+            buf: String::new(),
             counter: 0,
         }
     }
@@ -36,83 +36,81 @@ impl PatternDefs {
         let cell = ((stroke_width * PATTERN_CELL_MULTIPLIER).max(PATTERN_CELL_MIN) * SVG_ROUND_FACTOR).round() / SVG_ROUND_FACTOR;
         let line_w = (cell * PATTERN_LINE_WIDTH_RATIO * SVG_ROUND_FACTOR).round() / SVG_ROUND_FACTOR;
 
-        let pattern = match pattern_type {
-            "hatched" => Pattern::new()
-                .set("id", &*id)
-                .set("patternUnits", "userSpaceOnUse")
-                .set("width", cell)
-                .set("height", cell)
-                .set("patternTransform", "rotate(45)")
-                .add(
-                    Line::new()
-                        .set("x1", 0)
-                        .set("y1", 0)
-                        .set("x2", 0)
-                        .set("y2", cell)
-                        .set("stroke", color)
-                        .set("stroke-width", line_w),
-                ),
-            "crosshatched" => Pattern::new()
-                .set("id", &*id)
-                .set("patternUnits", "userSpaceOnUse")
-                .set("width", cell)
-                .set("height", cell)
-                .set("patternTransform", "rotate(45)")
-                .add(
-                    Line::new()
-                        .set("x1", 0)
-                        .set("y1", 0)
-                        .set("x2", 0)
-                        .set("y2", cell)
-                        .set("stroke", color)
-                        .set("stroke-width", line_w),
-                )
-                .add(
-                    Line::new()
-                        .set("x1", 0)
-                        .set("y1", 0)
-                        .set("x2", cell)
-                        .set("y2", 0)
-                        .set("stroke", color)
-                        .set("stroke-width", line_w),
-                ),
+        // Helper: write pattern header
+        let buf = &mut self.buf;
+        buf.push_str(r#"<pattern id=""#);
+        buf.push_str(&id);
+        buf.push_str(r#"" patternUnits="userSpaceOnUse" width=""#);
+        push_f64(buf, cell);
+        buf.push_str(r#"" height=""#);
+        push_f64(buf, cell);
+
+        match pattern_type {
+            "hatched" => {
+                buf.push_str(r#"" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2=""#);
+                push_f64(buf, cell);
+                buf.push_str(r#"" stroke=""#);
+                buf.push_str(color);
+                buf.push_str(r#"" stroke-width=""#);
+                push_f64(buf, line_w);
+                buf.push_str(r#""/></pattern>"#);
+            }
+            "crosshatched" => {
+                buf.push_str(r#"" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2=""#);
+                push_f64(buf, cell);
+                buf.push_str(r#"" stroke=""#);
+                buf.push_str(color);
+                buf.push_str(r#"" stroke-width=""#);
+                push_f64(buf, line_w);
+                buf.push_str(r#""/><line x1="0" y1="0" x2=""#);
+                push_f64(buf, cell);
+                buf.push_str(r#"" y2="0" stroke=""#);
+                buf.push_str(color);
+                buf.push_str(r#"" stroke-width=""#);
+                push_f64(buf, line_w);
+                buf.push_str(r#""/></pattern>"#);
+            }
             "dotted" => {
                 let r = cell * PATTERN_DOT_RADIUS_RATIO;
-                Pattern::new()
-                    .set("id", &*id)
-                    .set("patternUnits", "userSpaceOnUse")
-                    .set("width", cell)
-                    .set("height", cell)
-                    .add(
-                        Circle::new()
-                            .set("cx", cell / 2.0)
-                            .set("cy", cell / 2.0)
-                            .set("r", r)
-                            .set("fill", color),
-                    )
+                let half = cell / 2.0;
+                buf.push_str(r#""><circle cx=""#);
+                push_f64(buf, half);
+                buf.push_str(r#"" cy=""#);
+                push_f64(buf, half);
+                buf.push_str(r#"" r=""#);
+                push_f64(buf, r);
+                buf.push_str(r#"" fill=""#);
+                buf.push_str(color);
+                buf.push_str(r#""/></pattern>"#);
             }
-            _ => Pattern::new()
-                .set("id", &*id)
-                .set("patternUnits", "userSpaceOnUse")
-                .set("width", cell)
-                .set("height", cell),
-        };
+            _ => {
+                buf.push_str(r#""/>"#);
+            }
+        }
 
-        self.defs = std::mem::replace(&mut self.defs, Definitions::new()).add(pattern);
         self.patterns.insert(key, id.clone());
         id
     }
 
     pub fn has_patterns(&self) -> bool {
-        !self.patterns.is_empty()
+        !self.buf.is_empty()
+    }
+
+    pub fn write_defs(&self, out: &mut String) {
+        out.push_str("<defs>");
+        out.push_str(&self.buf);
+        out.push_str("</defs>");
     }
 }
 
-pub fn resolve_fill(style: &ResolvedStyle, patterns: &mut PatternDefs) -> String {
+/// Write the fill attribute value directly to the SVG string (no intermediate allocation).
+pub fn write_fill(svg: &mut String, style: &ResolvedStyle<'_>, patterns: &mut PatternDefs) {
     if let Some(ref pat) = style.fill_pattern {
         let id = patterns.get_or_create(pat, &style.fill, style.stroke_width);
-        format!("url(#{})", id)
+        svg.push_str("url(#");
+        svg.push_str(&id);
+        svg.push(')');
     } else {
-        style.fill.clone()
+        svg.push_str(&style.fill);
     }
 }

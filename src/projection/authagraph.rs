@@ -28,7 +28,7 @@ struct Pole {
     tht: f64,
 }
 
-pub(super) struct Compiled {
+pub(crate) struct Compiled {
     pole: Pole,
     facets: [Facet; 6],
     sqrt3: f64,
@@ -80,21 +80,29 @@ pub fn compile() -> Compiled {
 
 impl Projection for Compiled {
     fn antimeridian_gap(&self) -> f64 {
-        1.5
+        0.6
     }
 
     fn project(&self, lon_deg: f64, lat_deg: f64) -> (f64, f64) {
         let lat = lat_deg.to_radians();
         let lon = lon_deg.to_radians();
 
-        let (lat_g, lon_g) = oblique_pole(lat, lon, &self.pole);
+        // Precompute sin/cos of input point for oblique_pole
+        let sin_lat = lat.sin();
+        let cos_lat = lat.cos();
+
+        let (lat_g, lon_g) = oblique_pole(sin_lat, cos_lat, lon, &self.pole);
+
+        // Precompute sin/cos of rotated point for facet loop (used 5-6 times)
+        let sin_lat_g = lat_g.sin();
+        let cos_lat_g = lat_g.cos();
 
         let mut best_lat = f64::NEG_INFINITY;
         let mut best_lon = 0.0;
         let mut best_idx = 0;
 
         for (i, f) in self.facets.iter().enumerate() {
-            let (lat_r, lon_r) = oblique_facet(lat_g, lon_g, f);
+            let (lat_r, lon_r) = oblique_facet(sin_lat_g, cos_lat_g, lat_g, lon_g, f);
             if lat_r > best_lat {
                 best_lat = lat_r;
                 best_lon = lon_r;
@@ -147,36 +155,28 @@ fn face_project(lat: f64, lon: f64, sqrt3: f64) -> (f64, f64) {
 }
 
 /// Oblique rotation using the precomputed main pole (sin/cos cached).
+/// Accepts precomputed sin/cos of input latitude to avoid recomputation.
 #[inline]
-fn oblique_pole(lat_f: f64, lon_f: f64, pole: &Pole) -> (f64, f64) {
+fn oblique_pole(sin_lat_f: f64, cos_lat_f: f64, lon_f: f64, pole: &Pole) -> (f64, f64) {
     let sin_lat0 = pole.sin_lat;
     let cos_lat0 = pole.cos_lat;
     let lon0 = pole.lon;
     let tht0 = pole.tht;
 
-    let lat1 = if (sin_lat0 - 1.0).abs() < 1e-10 {
-        // lat0 ≈ π/2
-        lat_f
-    } else if (sin_lat0 + 1.0).abs() < 1e-10 {
-        // lat0 ≈ -π/2
-        -lat_f
-    } else {
-        (sin_lat0 * lat_f.sin() + cos_lat0 * lat_f.cos() * (lon0 - lon_f).cos())
-            .clamp(-1.0, 1.0)
-            .asin()
-    };
+    // pole_lat = 77° → sin_lat0 ≈ 0.974, always takes the general branch
+    let lon_diff_cos = (lon0 - lon_f).cos();
 
-    let mut lon1 = if (sin_lat0 - 1.0).abs() < 1e-10 {
-        lon_f - lon0
-    } else if (sin_lat0 + 1.0).abs() < 1e-10 {
-        lon0 - lon_f - PI
-    } else {
+    let lat1 = (sin_lat0 * sin_lat_f + cos_lat0 * cos_lat_f * lon_diff_cos)
+        .clamp(-1.0, 1.0)
+        .asin();
+
+    let mut lon1 = {
         let cos_lat1 = lat1.cos();
         if cos_lat1.abs() < 1e-15 {
             0.0
         } else {
-            let val = (cos_lat0 * lat_f.sin()
-                - sin_lat0 * lat_f.cos() * (lon0 - lon_f).cos())
+            let val = (cos_lat0 * sin_lat_f
+                - sin_lat0 * cos_lat_f * lon_diff_cos)
                 / cos_lat1;
             let mut l = val.clamp(-1.0, 1.0).acos() - PI;
             if (lon_f - lon0).sin() > 0.0 {
@@ -198,34 +198,46 @@ fn oblique_pole(lat_f: f64, lon_f: f64, pole: &Pole) -> (f64, f64) {
 }
 
 /// Oblique rotation using a facet's precomputed sin/cos.
+/// Accepts precomputed sin/cos of input latitude to avoid redundant trig across 6 facet calls.
 #[inline]
-fn oblique_facet(lat_f: f64, lon_f: f64, facet: &Facet) -> (f64, f64) {
+fn oblique_facet(sin_lat_f: f64, cos_lat_f: f64, lat_f: f64, lon_f: f64, facet: &Facet) -> (f64, f64) {
     let sin_lat0 = facet.sin_lat;
     let cos_lat0 = facet.cos_lat;
     let lon0 = facet.lon;
     let tht0 = facet.cm;
 
-    let lat1 = if (cos_lat0).abs() < 1e-10 {
-        if sin_lat0 > 0.0 { lat_f } else { -lat_f }
-    } else {
-        (sin_lat0 * lat_f.sin() + cos_lat0 * lat_f.cos() * (lon0 - lon_f).cos())
-            .clamp(-1.0, 1.0)
-            .asin()
-    };
-
-    let mut lon1 = if (cos_lat0).abs() < 1e-10 {
-        if sin_lat0 > 0.0 {
+    if cos_lat0.abs() < 1e-10 {
+        // Special case: facet at pole (facet #2 with lat = π/2)
+        let lat1 = if sin_lat0 > 0.0 { lat_f } else { -lat_f };
+        let mut lon1 = if sin_lat0 > 0.0 {
             lon_f - lon0
         } else {
             lon0 - lon_f - PI
+        };
+        lon1 -= tht0;
+        if lon1.abs() > PI {
+            lon1 = (lon1 + PI).rem_euclid(2.0 * PI) - PI;
         }
-    } else {
+        if lon1 >= PI - 1e-7 {
+            lon1 = -PI;
+        }
+        return (lat1, lon1);
+    }
+
+    // General case: cache lon_diff_cos (used twice)
+    let lon_diff_cos = (lon0 - lon_f).cos();
+
+    let lat1 = (sin_lat0 * sin_lat_f + cos_lat0 * cos_lat_f * lon_diff_cos)
+        .clamp(-1.0, 1.0)
+        .asin();
+
+    let mut lon1 = {
         let cos_lat1 = lat1.cos();
         if cos_lat1.abs() < 1e-15 {
             0.0
         } else {
-            let val = (cos_lat0 * lat_f.sin()
-                - sin_lat0 * lat_f.cos() * (lon0 - lon_f).cos())
+            let val = (cos_lat0 * sin_lat_f
+                - sin_lat0 * cos_lat_f * lon_diff_cos)
                 / cos_lat1;
             let mut l = val.clamp(-1.0, 1.0).acos() - PI;
             if (lon_f - lon0).sin() > 0.0 {

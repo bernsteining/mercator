@@ -1,12 +1,16 @@
 use super::{normalize_lon, Projection};
+use std::f64::consts::PI;
 
 const LAT_CLAMP: f64 = 89.99;
 
-pub(super) struct Compiled {
+pub(crate) struct Compiled {
     n: f64,
+    two_n: f64,
+    inv_n: f64,
     c: f64,
     rho0: f64,
     central_meridian: f64,
+    gap: f64,
 }
 
 pub fn compile(
@@ -27,17 +31,25 @@ pub fn compile(
         (c - 2.0 * n * phi0.sin()).max(0.0).sqrt() / n
     };
 
-    Compiled { n, c, rho0, central_meridian }
+    let inv_n = if n.abs() < 1e-10 { 0.0 } else { 1.0 / n };
+    // Antimeridian jump at equator: 2 * rho_eq * |sin(n*π)|; use half as gap threshold
+    let rho_eq = if n.abs() < 1e-10 { 0.0 } else { c.max(0.0).sqrt() / n };
+    let gap = rho_eq.abs() * (n * PI).sin().abs();
+    Compiled { n, two_n: 2.0 * n, inv_n, c, rho0, central_meridian, gap }
 }
 
 impl Projection for Compiled {
+    fn antimeridian_gap(&self) -> f64 {
+        self.gap
+    }
+
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let lat_rad = lat.clamp(-LAT_CLAMP, LAT_CLAMP).to_radians();
         let delta_lon = normalize_lon(lon - self.central_meridian);
         let theta = self.n * delta_lon.to_radians();
-        let q = self.c - 2.0 * self.n * lat_rad.sin();
-        let rho = if q > 0.0 && self.n.abs() > 1e-10 {
-            q.sqrt() / self.n
+        let q = self.c - self.two_n * lat_rad.sin();
+        let rho = if q > 0.0 {
+            q.sqrt() * self.inv_n
         } else {
             0.0
         };

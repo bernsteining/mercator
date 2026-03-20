@@ -9,16 +9,16 @@ Mercator is a Typst plugin to render GeoJSON and TopoJSON as SVG maps.
 ```typst
 #import "@preview/mercator:0.1.2": *
 
-#let world = read("examples/data/world.json", encoding: "utf8")
+#let world = read("examples/data/world.json", encoding: none)
 
-#render-map(world, json.encode((
+#render-map(world, (
   projection: (
     type: "orthographic",
     center_lat: 45,
     center_lon: 10,
   ),
   graticule: (step: 15),
-)), width: 100%)
+), width: 100%)
 ```
 
 ## documentation

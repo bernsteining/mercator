@@ -1,12 +1,14 @@
 use super::{normalize_lon, Projection};
+use std::f64::consts::PI;
 
 const LAT_CLAMP: f64 = 89.99;
 
-pub(super) struct Compiled {
+pub(crate) struct Compiled {
     n: f64,
     f: f64,
     rho0: f64,
     central_meridian: f64,
+    gap: f64,
 }
 
 pub fn compile(
@@ -37,18 +39,23 @@ pub fn compile(
             .tan()
             .powf(n);
 
-    Compiled { n, f, rho0, central_meridian }
+    // Antimeridian jump at equator = 2*f*|sin(n*π)|; use half as gap threshold
+    let gap = f.abs() * (n * PI).sin().abs();
+    Compiled { n, f, rho0, central_meridian, gap }
 }
 
 impl Projection for Compiled {
+    fn antimeridian_gap(&self) -> f64 {
+        self.gap
+    }
+
     fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
         let lat_rad = lat.clamp(-LAT_CLAMP, LAT_CLAMP).to_radians();
         let delta_lon = normalize_lon(lon - self.central_meridian);
         let theta = self.n * delta_lon.to_radians();
+        // Replace tan().powf(n) with explicit ln()+exp() to avoid powf overhead
         let rho = self.f
-            / (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0)
-                .tan()
-                .powf(self.n);
+            * (-self.n * (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0).tan().ln()).exp();
         let x = rho * theta.sin();
         let y = self.rho0 - rho * theta.cos();
         (x, -y)

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::projection::ProjectionConfig;
 use serde::Deserialize;
 
@@ -121,45 +123,49 @@ impl Default for StyleConfig {
     }
 }
 
-pub struct ResolvedStyle {
-    pub stroke: String,
+pub struct ResolvedStyle<'a> {
+    pub stroke: Cow<'a, str>,
     pub stroke_width: f64,
-    pub fill: String,
+    pub fill: Cow<'a, str>,
     pub fill_opacity: f64,
     pub point_radius: f64,
-    pub point_color: Option<String>,
-    pub fill_pattern: Option<String>,
+    pub point_color: Option<Cow<'a, str>>,
+    pub fill_pattern: Option<Cow<'a, str>>,
 }
 
-pub fn resolve_style(
-    config: &StyleConfig,
+fn resolve_field<'a>(
+    template: &'a str,
+    fallback: &'a str,
     properties: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> ResolvedStyle {
-    let resolve = |template: &str, fallback: &str| -> String {
-        if !template.contains('{') {
-            return template.to_string();
+) -> Cow<'a, str> {
+    if !template.contains('{') {
+        return Cow::Borrowed(template);
+    }
+    if let Some(props) = properties {
+        if let Some(val) = interpolate_template(template, props) {
+            return Cow::Owned(val);
         }
-        if let Some(props) = properties {
-            if let Some(val) = interpolate_template(template, props) {
-                return val;
-            }
-        }
-        fallback.to_string()
-    };
+    }
+    Cow::Borrowed(fallback)
+}
 
-    let fill_pattern = config.fill_pattern.as_ref().and_then(|template| {
-        let resolved = resolve(template, "");
+pub fn resolve_style<'a>(
+    config: &'a StyleConfig,
+    properties: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> ResolvedStyle<'a> {
+    let fill_pattern = config.fill_pattern.as_deref().and_then(|template| {
+        let resolved = resolve_field(template, "", properties);
         if resolved.is_empty() { None } else { Some(resolved) }
     });
 
-    let point_color = config.point_color.as_ref().map(|template| {
-        resolve(template, "none")
+    let point_color = config.point_color.as_deref().map(|template| {
+        resolve_field(template, "none", properties)
     });
 
     ResolvedStyle {
-        stroke: resolve(&config.stroke, "black"),
+        stroke: resolve_field(&config.stroke, "black", properties),
         stroke_width: config.stroke_width,
-        fill: resolve(&config.fill, "none"),
+        fill: resolve_field(&config.fill, "none", properties),
         fill_opacity: config.fill_opacity,
         point_radius: config.point_radius.unwrap_or(config.stroke_width * 5.0),
         point_color,

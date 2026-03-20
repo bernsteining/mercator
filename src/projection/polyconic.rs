@@ -12,8 +12,9 @@ impl Projection for Polyconic {
             return (lambda, 0.0);
         }
 
-        let cot_phi = phi.cos() / phi.sin();
-        let e = lambda * phi.sin();
+        let sin_phi = phi.sin();
+        let cot_phi = phi.cos() / sin_phi;
+        let e = lambda * sin_phi;
         let x = cot_phi * e.sin();
         let y = phi + cot_phi * (1.0 - e.cos());
 

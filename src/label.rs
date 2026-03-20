@@ -1,6 +1,4 @@
-use svg::node::element::Text;
-use svg::Document;
-
+use crate::geometry::push_f64;
 use crate::style::{
     interpolate_template, LabelConfig, LabelInstance, StyleConfig,
 };
@@ -8,17 +6,36 @@ use crate::style::{
 const DEFAULT_LABEL_FONT_SIZE: f64 = 0.3;
 const LABEL_LINE_SPACING: f64 = 1.2;
 
-pub fn add_label(doc: Document, label: &LabelInstance) -> Document {
-    doc.add(
-        Text::new(&*label.text)
-            .set("x", label.x)
-            .set("y", label.y)
-            .set("font-size", label.font_size)
-            .set("font-family", &*label.font_family)
-            .set("fill", &*label.color)
-            .set("text-anchor", label.anchor)
-            .set("dominant-baseline", "middle"),
-    )
+fn xml_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+pub fn write_label(out: &mut String, label: &LabelInstance) {
+    out.push_str(r#"<text x=""#);
+    push_f64(out, label.x);
+    out.push_str(r#"" y=""#);
+    push_f64(out, label.y);
+    out.push_str(r#"" font-size=""#);
+    push_f64(out, label.font_size);
+    out.push_str(r#"" font-family=""#);
+    out.push_str(&label.font_family);
+    out.push_str(r#"" fill=""#);
+    out.push_str(&label.color);
+    out.push_str(r#"" text-anchor=""#);
+    out.push_str(label.anchor);
+    out.push_str(r#"" dominant-baseline="middle">"#);
+    out.push_str(&xml_escape(&label.text));
+    out.push_str("</text>");
 }
 
 pub fn build_labels(

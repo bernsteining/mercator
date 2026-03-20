@@ -19,8 +19,6 @@ mod robinson;
 mod wiechel;
 mod winkel_tripel;
 
-use crate::geometry::for_each_coord_mut;
-use geojson::GeoJson;
 use serde::Deserialize;
 
 pub trait Projection {
@@ -154,24 +152,82 @@ pub enum ProjectionConfig {
     Authagraph,
 }
 
-pub fn from_config(config: Option<ProjectionConfig>) -> Box<dyn Projection> {
+pub(crate) enum Proj {
+    Equirectangular(equirectangular::Equirectangular),
+    Mercator(mercator::Mercator),
+    LambertConformalConic(lambert::Compiled),
+    AlbersEqualArea(albers::Compiled),
+    Robinson(robinson::Robinson),
+    Orthographic(orthographic::Orthographic),
+    NaturalEarth(natural_earth::NaturalEarth),
+    LambertAzimuthal(lambert_azimuthal::LambertAzimuthal),
+    Gnomonic(gnomonic::Gnomonic),
+    Wiechel(wiechel::Wiechel),
+    PeirceQuincuncial(peirce::Compiled),
+    Cassini(cassini::Cassini),
+    Bonne(bonne::Bonne),
+    Polyconic(polyconic::Polyconic),
+    AzimuthalEquidistant(azimuthal_equidistant::AzimuthalEquidistant),
+    Hammer(hammer::Hammer),
+    WinkelTripel(winkel_tripel::WinkelTripel),
+    Authagraph(authagraph::Compiled),
+}
+
+macro_rules! dispatch {
+    ($self:expr, $method:ident $(, $arg:expr)*) => {
+        match $self {
+            Proj::Equirectangular(p) => p.$method($($arg),*),
+            Proj::Mercator(p) => p.$method($($arg),*),
+            Proj::LambertConformalConic(p) => p.$method($($arg),*),
+            Proj::AlbersEqualArea(p) => p.$method($($arg),*),
+            Proj::Robinson(p) => p.$method($($arg),*),
+            Proj::Orthographic(p) => p.$method($($arg),*),
+            Proj::NaturalEarth(p) => p.$method($($arg),*),
+            Proj::LambertAzimuthal(p) => p.$method($($arg),*),
+            Proj::Gnomonic(p) => p.$method($($arg),*),
+            Proj::Wiechel(p) => p.$method($($arg),*),
+            Proj::PeirceQuincuncial(p) => p.$method($($arg),*),
+            Proj::Cassini(p) => p.$method($($arg),*),
+            Proj::Bonne(p) => p.$method($($arg),*),
+            Proj::Polyconic(p) => p.$method($($arg),*),
+            Proj::AzimuthalEquidistant(p) => p.$method($($arg),*),
+            Proj::Hammer(p) => p.$method($($arg),*),
+            Proj::WinkelTripel(p) => p.$method($($arg),*),
+            Proj::Authagraph(p) => p.$method($($arg),*),
+        }
+    };
+}
+
+impl Proj {
+    #[inline]
+    pub fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
+        dispatch!(self, project, lon, lat)
+    }
+
+    #[inline]
+    pub fn antimeridian_gap(&self) -> f64 {
+        dispatch!(self, antimeridian_gap)
+    }
+}
+
+pub fn from_config(config: Option<ProjectionConfig>) -> Proj {
     match config {
-        None => Box::new(equirectangular::Equirectangular {
+        None => Proj::Equirectangular(equirectangular::Equirectangular {
             central_meridian: 0.0,
         }),
         Some(c) => match c {
             ProjectionConfig::Equirectangular { central_meridian } => {
-                Box::new(equirectangular::Equirectangular { central_meridian })
+                Proj::Equirectangular(equirectangular::Equirectangular { central_meridian })
             }
             ProjectionConfig::Mercator { central_meridian } => {
-                Box::new(mercator::Mercator { central_meridian })
+                Proj::Mercator(mercator::Mercator { central_meridian })
             }
             ProjectionConfig::LambertConformalConic {
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
-            } => Box::new(lambert::compile(
+            } => Proj::LambertConformalConic(lambert::compile(
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
@@ -182,106 +238,69 @@ pub fn from_config(config: Option<ProjectionConfig>) -> Box<dyn Projection> {
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
-            } => Box::new(albers::compile(
+            } => Proj::AlbersEqualArea(albers::compile(
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
             )),
             ProjectionConfig::Robinson { central_meridian } => {
-                Box::new(robinson::Robinson { central_meridian })
+                Proj::Robinson(robinson::Robinson { central_meridian })
             }
             ProjectionConfig::Orthographic {
                 center_lat,
                 center_lon,
-            } => Box::new(orthographic::Orthographic(azimuthal::compile(
+            } => Proj::Orthographic(orthographic::Orthographic(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::NaturalEarth { central_meridian } => {
-                Box::new(natural_earth::NaturalEarth { central_meridian })
+                Proj::NaturalEarth(natural_earth::NaturalEarth { central_meridian })
             }
             ProjectionConfig::LambertAzimuthalEqualArea {
                 center_lat,
                 center_lon,
-            } => Box::new(lambert_azimuthal::LambertAzimuthal(azimuthal::compile(
+            } => Proj::LambertAzimuthal(lambert_azimuthal::LambertAzimuthal(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::Gnomonic {
                 center_lat,
                 center_lon,
-            } => Box::new(gnomonic::Gnomonic(azimuthal::compile(
+            } => Proj::Gnomonic(gnomonic::Gnomonic(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::Wiechel {
                 center_lat,
                 center_lon,
-            } => Box::new(wiechel::Wiechel(azimuthal::compile(
+            } => Proj::Wiechel(wiechel::Wiechel(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::PeirceQuincuncial { center_lon } => {
-                Box::new(peirce::compile(center_lon))
+                Proj::PeirceQuincuncial(peirce::compile(center_lon))
             }
             ProjectionConfig::Cassini { central_meridian } => {
-                Box::new(cassini::Cassini { central_meridian })
+                Proj::Cassini(cassini::Cassini { central_meridian })
             }
             ProjectionConfig::Bonne {
                 central_meridian,
                 standard_parallel,
-            } => Box::new(bonne::Bonne {
-                central_meridian,
-                standard_parallel,
-            }),
+            } => Proj::Bonne(bonne::Bonne::new(central_meridian, standard_parallel)),
             ProjectionConfig::Polyconic { central_meridian } => {
-                Box::new(polyconic::Polyconic { central_meridian })
+                Proj::Polyconic(polyconic::Polyconic { central_meridian })
             }
             ProjectionConfig::AzimuthalEquidistant {
                 center_lat,
                 center_lon,
-            } => Box::new(azimuthal_equidistant::AzimuthalEquidistant(
+            } => Proj::AzimuthalEquidistant(azimuthal_equidistant::AzimuthalEquidistant(
                 azimuthal::compile(center_lat, center_lon),
             )),
             ProjectionConfig::Hammer { central_meridian } => {
-                Box::new(hammer::Hammer { central_meridian })
+                Proj::Hammer(hammer::Hammer { central_meridian })
             }
             ProjectionConfig::WinkelTripel { central_meridian } => {
-                Box::new(winkel_tripel::WinkelTripel::new(central_meridian))
+                Proj::WinkelTripel(winkel_tripel::WinkelTripel::new(central_meridian))
             }
-            ProjectionConfig::Authagraph => Box::new(authagraph::compile()),
+            ProjectionConfig::Authagraph => Proj::Authagraph(authagraph::compile()),
         },
     }
 }
 
-/// Project all coordinates in a GeoJson structure in-place.
-pub fn project_geojson(geojson: &mut GeoJson, proj: &dyn Projection) {
-    let mut project = |coord: &mut Vec<f64>| {
-        if coord.len() >= 2 {
-            let (x, y) = proj.project(coord[0], coord[1]);
-            coord[0] = x;
-            coord[1] = y;
-        }
-    };
-
-    match geojson {
-        GeoJson::FeatureCollection(fc) => {
-            fc.bbox = None;
-            for feat in &mut fc.features {
-                feat.bbox = None;
-                if let Some(ref mut geom) = feat.geometry {
-                    geom.bbox = None;
-                    for_each_coord_mut(&mut geom.value, &mut project);
-                }
-            }
-        }
-        GeoJson::Feature(feat) => {
-            feat.bbox = None;
-            if let Some(ref mut geom) = feat.geometry {
-                geom.bbox = None;
-                for_each_coord_mut(&mut geom.value, &mut project);
-            }
-        }
-        GeoJson::Geometry(geom) => {
-            geom.bbox = None;
-            for_each_coord_mut(&mut geom.value, &mut project);
-        }
-    }
-}

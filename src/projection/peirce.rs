@@ -2,12 +2,12 @@ use super::elliptic::{elliptic_f, elliptic_fi};
 use super::Projection;
 use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, PI, SQRT_2};
 
-pub(super) struct Compiled {
+pub(crate) struct Compiled {
     center_lon: f64,
-    k_prime: f64,
     k_sq: f64,
     k_complete: f64,
     dx: f64,
+    inv_sqrt_k_prime: f64,
 }
 
 pub fn compile(center_lon: f64) -> Compiled {
@@ -15,11 +15,12 @@ pub fn compile(center_lon: f64) -> Compiled {
     let k_sq = 1.0 - k_prime * k_prime;
     let k_complete = elliptic_f(FRAC_PI_2, k_sq);
 
-    let gx_pos = guyou_forward(FRAC_PI_2 - 1e-6, 0.0, k_prime, k_sq, k_complete);
-    let gx_neg = guyou_forward(-FRAC_PI_2 + 1e-6, 0.0, k_prime, k_sq, k_complete);
+    let inv_sqrt_k_prime = 1.0 / k_prime.sqrt();
+    let gx_pos = guyou_forward(FRAC_PI_2 - 1e-6, 0.0, inv_sqrt_k_prime, k_sq, k_complete);
+    let gx_neg = guyou_forward(-FRAC_PI_2 + 1e-6, 0.0, inv_sqrt_k_prime, k_sq, k_complete);
     let dx = gx_pos.0 - gx_neg.0;
 
-    Compiled { center_lon, k_prime, k_sq, k_complete, dx }
+    Compiled { center_lon, k_sq, k_complete, dx, inv_sqrt_k_prime }
 }
 
 impl Projection for Compiled {
@@ -63,7 +64,7 @@ fn quincuncial(lambda: f64, phi: f64, c: &Compiled) -> (f64, f64) {
         lambda + PI
     };
 
-    let (gx, gy) = guyou_forward(lam, phi, c.k_prime, c.k_sq, c.k_complete);
+    let (gx, gy) = guyou_forward(lam, phi, c.inv_sqrt_k_prime, c.k_sq, c.k_complete);
 
     let x = (gx - gy) * FRAC_1_SQRT_2;
     let y = (gx + gy) * FRAC_1_SQRT_2;
@@ -78,10 +79,10 @@ fn quincuncial(lambda: f64, phi: f64, c: &Compiled) -> (f64, f64) {
 }
 
 #[inline]
-fn guyou_forward(lambda: f64, phi: f64, k_prime: f64, k_sq: f64, k_complete: f64) -> (f64, f64) {
-    let psi = (FRAC_PI_4 + phi.abs() / 2.0).tan().ln();
-    let r = (-psi).exp() / k_prime.sqrt();
-    let at = complex_atan(r * (-lambda).cos(), r * (-lambda).sin());
+fn guyou_forward(lambda: f64, phi: f64, inv_sqrt_k_prime: f64, k_sq: f64, k_complete: f64) -> (f64, f64) {
+    // exp(-ln(tan(x))) = 1/tan(x), avoiding ln() + exp()
+    let r = inv_sqrt_k_prime / (FRAC_PI_4 + phi.abs() / 2.0).tan();
+    let at = complex_atan(r * lambda.cos(), -r * lambda.sin());
     let t = elliptic_fi(at.0, at.1, k_sq);
     let sign_phi = if phi >= 0.0 { 1.0 } else { -1.0 };
     (-t.1, sign_phi * (0.5 * k_complete - t.0))
