@@ -1,0 +1,99 @@
+name: Build & smoke-test
+
+# Builds the plugin wasm the same way as local + Pages (pinned rust:1.94.1 +
+# binaryen v128), then runs it through the wasmi-based harness against the sample
+# datasets to prove it renders without trapping. Uploads the optimized wasm as a
+# build artifact. Runs on every push/PR touching the plugin.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "harness/**"
+      - "examples/data/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "harness/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+env:
+  BINARYEN_VERSION: version_128
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: rust:1.94.1-slim-bookworm
+    steps:
+      - name: System deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git curl ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Ensure wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+            harness/target
+          key: ${{ runner.os }}-build-${{ hashFiles('Cargo.lock', 'harness/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-build-
+
+      - name: Install binaryen ${{ env.BINARYEN_VERSION }}
+        run: |
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
+            | tar -xz
+          echo "$PWD/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Build + optimize wasm
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          wasm-opt -O4 --enable-simd --enable-bulk-memory --enable-sign-ext \
+            --enable-nontrapping-float-to-int --enable-mutable-globals --strip-debug \
+            target/wasm32-unknown-unknown/release/mercator.wasm -o mercator/mercator.wasm
+          ls -la mercator/mercator.wasm
+
+      - name: Build harness (native wasmi runner)
+        working-directory: harness
+        run: cargo build --release
+
+      - name: Smoke-test render (all sample datasets, must not trap)
+        run: |
+          set -e
+          H=harness/target/release/harness
+          for f in world.json world_no_antartica.json swedish_regions.json cities.geojson; do
+            out=$("$H" mercator/mercator.wasm "examples/data/$f")
+            case "$out" in
+              "<svg"*) echo "ok: $f -> ${#out} bytes" ;;
+              *) echo "::error::$f did not render an SVG"; echo "$out" | head -c 300; exit 1 ;;
+            esac
+          done
+
+      - name: Verify no build paths leaked into wasm
+        run: |
+          if grep -aE '/(home|root|Users)/[A-Za-z0-9._-]' mercator/mercator.wasm; then
+            echo "::error::build path leaked into wasm"; exit 1
+          fi
+          echo "no path leaks ✓"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mercator-wasm
+          path: mercator/mercator.wasm

@@ -1,3 +1,17 @@
 /target
 /.idea
 Cargo.lock
+
+# Tooling / build artifacts
+/.serena/
+/harness/target/
+
+# Large scratch dataset (49 MB, unreferenced by docs) — kept out of git history
+/examples/data/france/
+
+# Web demo (docs/) artifacts staged by the Pages workflow from source —
+# not committed, to avoid duplication/drift. The demo's source is
+# docs/{index.html,app.js,worker.js}; everything below is generated.
+/docs/mercator.wasm
+/docs/logo.png
+/docs/data/

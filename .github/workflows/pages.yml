@@ -1,0 +1,101 @@
+name: Deploy demo (GitHub Pages)
+
+# Rebuilds mercator.wasm from source and deploys docs/ (the live web demo) to
+# GitHub Pages, so the demo's WASM always matches the plugin source — no manual
+# copy, no drift. The build mirrors the local recipe (README "build locally"):
+# a pinned rust:1.94.1 container + binaryen v128, so CI tooling == local tooling.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".cargo/**"
+      - "docs/**"
+      - "examples/data/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  BINARYEN_VERSION: version_128 # matches local wasm-opt v128
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Debian-based (glibc) image so GitHub's injected Node runs the JS actions.
+    container: rust:1.94.1-slim-bookworm
+    steps:
+      - name: System deps
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git curl ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Ensure wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/cargo/registry
+            /usr/local/cargo/git
+            target
+          key: ${{ runner.os }}-pages-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-pages-
+
+      - name: Install binaryen ${{ env.BINARYEN_VERSION }} (match local wasm-opt)
+        run: |
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors \
+            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
+            | tar -xz
+          echo "$PWD/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Versions
+        run: rustc --version && wasm-opt --version
+
+      - name: Build + optimize wasm (matches README build recipe)
+        run: |
+          cargo build --target wasm32-unknown-unknown --release
+          wasm-opt -O4 --enable-simd --enable-bulk-memory --enable-sign-ext \
+            --enable-nontrapping-float-to-int --enable-mutable-globals --strip-debug \
+            target/wasm32-unknown-unknown/release/mercator.wasm -o docs/mercator.wasm
+          ls -la docs/mercator.wasm
+
+      - name: Stage demo datasets
+        # The demo's sample data lives canonically in examples/data/; copy it into
+        # the deployed artifact (not committed under docs/, to avoid duplication).
+        run: |
+          mkdir -p docs/data
+          cp examples/data/world.json examples/data/world_no_antartica.json \
+             examples/data/swedish_regions.json examples/data/cities.geojson docs/data/
+          cp examples/data/logo.png docs/logo.png
+          ls -la docs/data docs/logo.png
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest # deploy runs on the plain runner (needs the OIDC token; no container)
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
