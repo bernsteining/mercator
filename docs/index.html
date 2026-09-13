@@ -28,13 +28,22 @@
     font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
   }
-  header { display: flex; align-items: center; gap: .75rem; padding: .6rem 1.1rem; border-bottom: 1px solid var(--line); background: var(--panel); }
-  header img { width: 2.2rem; height: 2.2rem; border-radius: .5rem; display: block; }
+  header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
   header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -.2px; }
-  header .badge { font-size: .68rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: .15rem .45rem; border-radius: 5px; }
-  header .links { margin-left: auto; display: flex; gap: 1rem; }
-  header .links a { color: var(--muted); text-decoration: none; font-size: .85rem; font-weight: 500; }
+  header .brand { display: flex; align-items: center; gap: 0.6rem; color: inherit; text-decoration: none; transition: color .12s; }
+  header .brand img { border-radius: 0.55rem; display: block; width: 2.6rem; height: 2.6rem; }
+  header .brand:hover h1 { color: var(--accent); }
+  header .badge { font-size: 0.7rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-soft); padding: 0.15rem 0.45rem; border-radius: 5px; }
+  header .tag { color: var(--muted); font-size: 0.85rem; }
+  header .links { margin-left: auto; display: flex; align-items: center; gap: 0.9rem; }
+  header .links a { color: var(--muted); text-decoration: none; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; transition: color .12s; }
   header .links a:hover { color: var(--accent); }
+  header .links a.icon { color: var(--ink-soft); }
+  header .links a.icon svg { width: 2.6rem; height: 2.6rem; display: block; }
 
   main { flex: 1; display: grid; grid-template-columns: minmax(320px, 4fr) 6fr; gap: 1px; background: var(--line); min-height: 0; }
   .pane { background: var(--bg); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -102,12 +111,26 @@
 </head>
 <body>
   <header>
-    <img src="logo.png" alt="mercator logo">
-    <h1>mercator</h1>
-    <span class="badge">Typst plugin</span>
+    <a class="brand" href="https://bernsteining.github.io/mercator/">
+      <img src="logo.png" alt="">
+      <h1>mercator</h1>
+    </a>
+    <span class="badge">demo</span>
     <nav class="links">
-      <a href="https://github.com/bernsteining/mercator">GitHub</a>
-      <a href="https://typst.app/universe/package/mercator">Typst Universe</a>
+      <a id="link-typst" class="icon" href="https://typst.app/universe/package/mercator" target="_blank" rel="noopener" title="Typst Universe">
+        <!-- "t" glyph extracted from typst.app/assets/images/typst.svg (official wordmark). -->
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect width="24" height="24" rx="6" fill="#239dad"></rect>
+          <g transform="translate(7.3 2) scale(0.65)" fill="#ffffff">
+            <path d="M7.88785 18.1481C7.88785 19.2805 8.05033 20.0404 8.3753 20.4278C8.70026 20.8152 9.29111 21.0089 10.1478 21.0089C11.0341 21.0089 12.1715 20.5619 13.56 19.6679L14.4463 21.143C11.8465 23.3184 9.70471 24.4061 8.02079 24.4061C6.33687 24.4061 5.00745 24.0038 4.03255 23.1992C3.05765 22.3648 2.5702 20.9046 2.5702 18.8186V7.10728H0.35451L0 5.45338L2.5702 4.64879V2.45849L7.88785 0V4.91699L13.1169 4.51469L12.6294 7.42018L7.88785 7.24138V18.1481Z"/>
+          </g>
+        </svg>
+      </a>
+      <a id="link-github" class="icon" href="https://github.com/bernsteining/mercator" target="_blank" rel="noopener" title="View on GitHub">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.02-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+        </svg>
+      </a>
     </nav>
   </header>
 
