@@ -220,6 +220,22 @@ Draws a swatch key for the active `fill_scale` inside a viewbox corner.
 ), data: rates, key: "id")
 ```
 
+## layers (render-layers)
+
+`render-map` draws one dataset. To stack several — a basemap, boundaries, a data overlay, points — onto one shared projection and viewbox (so they line up), use `render-layers`:
+
+```typ
+#render-layers((
+  // bottom layer first
+  (data: read("regions.json", encoding: none), fill: "#e8e8e8", stroke: "white",
+   graticule: (step: 10)),
+  (data: read("cities.geojson", encoding: none), point_color: "crimson",
+   point_radius_scale: (property: "pop", max_radius: 1.2)),
+), projection: (type: "mercator"), width: 80%)
+```
+
+Each layer is a dictionary with `data` (the GeoJSON/TopoJSON) plus that layer's config keys. `projection` is shared across all layers. The viewbox defaults to the union of every layer's projected bounds (`viewbox-padding` controls the margin); pass `viewbox: (x, y, w, h)` to set it explicitly. Remaining arguments (e.g. `width`) go to each layer's image. The companion `map-bounds(code, projection: ..)` returns a dataset's projected `(x, y, w, h)`.
+
 ## build locally
 
 ```sh

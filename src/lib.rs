@@ -212,6 +212,7 @@ fn write_marker(svg: &mut String, shape: &str, x: f64, y: f64, r: f64, fill: &st
             push_f64(svg, y);
             svg.push_str(r#"" r=""#);
             push_f64(svg, r);
+            svg.push('"');
             common(svg);
         }
         Some(verts) => {
@@ -397,4 +398,62 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
 
     svg.push_str("</svg>");
     Ok(svg.into_bytes())
+}
+
+/// Compute the projected geometry bounds for one dataset under `config`'s
+/// projection (+ clip / sphere disc), returned as JSON `[x, y, w, h]` with zero
+/// padding. The `render-layers` Typst helper unions these across layers to pick
+/// one shared viewbox so every layer lines up.
+#[wasm_func]
+pub fn bounds(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
+    let mut conf: StyleConfig = if config.is_empty() {
+        StyleConfig::default()
+    } else {
+        serde_json::from_slice(config).map_err(|e| format!("invalid config: {e}"))?
+    };
+    let proj = projection::from_config(conf.projection.take());
+    let max_gap = proj.antimeridian_gap();
+    let clip: Option<Clip> = if let Some(c) = proj.clip_center() {
+        Some(Clip::Circle(ClipCircle::new(c)))
+    } else if conf.antimeridian {
+        proj.antimeridian_center().map(|central_meridian| Clip::Antimeridian { central_meridian })
+    } else {
+        None
+    };
+
+    let mut bounds = BoundsAccumulator::new();
+    let mut out = RenderOutput { max_gap, ..Default::default() };
+    let mut centroid = Centroid::new();
+
+    with_parsed_geojson(geojson, |gj| {
+        let mut accumulate = |g: &Geometry, out: &mut RenderOutput, b: &mut BoundsAccumulator| {
+            out.clear();
+            render_geometry(out, g, &proj, b, &mut centroid, false, clip.as_ref());
+        };
+        match gj {
+            GeoJson::FeatureCollection(features) => {
+                for f in features {
+                    if let Some(g) = &f.geometry {
+                        accumulate(g, &mut out, &mut bounds);
+                    }
+                }
+            }
+            GeoJson::Feature(f) => {
+                if let Some(g) = &f.geometry {
+                    accumulate(g, &mut out, &mut bounds);
+                }
+            }
+            GeoJson::Geometry(g) => accumulate(g, &mut out, &mut bounds),
+        }
+    })?;
+
+    // Match geo()'s auto-viewbox: include the ocean disc when one is drawn.
+    if let (Some(Clip::Circle(circle)), Some(_)) = (&clip, &conf.sphere) {
+        let ((cx, cy), r) = circle.disc(&proj);
+        bounds.add(cx - r, cy - r);
+        bounds.add(cx + r, cy + r);
+    }
+
+    let (x, y, w, h) = bounds.viewbox(0.0);
+    Ok(format!("[{},{},{},{}]", x, y, w, h).into_bytes())
 }

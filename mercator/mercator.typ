@@ -101,3 +101,53 @@
   let cfg = if type(config) == dictionary { json.encode(config) } else { config }
   image(bytes(render(code, cfg)), format: "svg", ..img-args)
 }
+
+/// Projected bounds of a GeoJSON under a projection, as `(x, y, w, h)`.
+/// Used by `render-layers` to align layers; also handy on its own.
+#let map-bounds(code, projection: (:)) = {
+  let out = mercator.bounds(bytes(code), bytes(json.encode((projection: projection))))
+  json(out)
+}
+
+/// Renders several GeoJSON layers onto one shared projection and viewbox, so a
+/// basemap, boundaries, data overlay and points all line up — the equivalent of
+/// drawing multiple d3 selections. Layers are drawn back-to-front (first = bottom).
+///
+/// - layers (array): each item is a dictionary with `data` (the GeoJSON) plus any
+///   config keys for that layer (`fill`, `stroke`, `fill_scale`, `graticule`, …).
+///   Put a `graticule`/`sphere`/`legend` on whichever layer should carry it.
+/// - projection (dictionary): the shared projection, applied to every layer.
+/// - viewbox (array, none): shared `(x, y, w, h)`; when `none`, the union of all
+///   layers' projected bounds (with `viewbox-padding`) is used.
+/// - viewbox-padding (float): padding fraction for the auto viewbox (default 0.15).
+/// - all remaining arguments: see image (e.g. `width`); applied to every layer.
+/// -> content
+#let render-layers(layers, projection: (:), viewbox: none, viewbox-padding: 0.15, ..args) = {
+  // Resolve a shared viewbox: explicit, or the union of each layer's bounds.
+  let vb = viewbox
+  if vb == none {
+    let (minx, miny, maxx, maxy) = (none, none, none, none)
+    for lyr in layers {
+      let (x, y, w, h) = map-bounds(lyr.data, projection: projection)
+      minx = if minx == none { x } else { calc.min(minx, x) }
+      miny = if miny == none { y } else { calc.min(miny, y) }
+      maxx = if maxx == none { x + w } else { calc.max(maxx, x + w) }
+      maxy = if maxy == none { y + h } else { calc.max(maxy, y + h) }
+    }
+    let (w, h) = (maxx - minx, maxy - miny)
+    let p = calc.max(w, h) * viewbox-padding
+    vb = (minx - p, miny - p, calc.max(w + 2 * p, 1), calc.max(h + 2 * p, 1))
+  }
+  // Render each layer with the shared projection + viewbox, then overlay them.
+  let imgs = layers.map(lyr => {
+    let cfg = (:)
+    for (k, v) in lyr { if k != "data" { cfg.insert(k, v) } }
+    cfg.projection = projection
+    cfg.viewbox = vb
+    render-map(lyr.data, cfg, ..args.named())
+  })
+  if imgs.len() == 0 { return }
+  // First image is in flow (sets the box size); the rest overlay it (same
+  // viewbox + width → identical size → pixel-aligned).
+  box(imgs.first() + imgs.slice(1).map(im => place(top + left, im)).join())
+}
