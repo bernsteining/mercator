@@ -24,11 +24,12 @@
 #let sweden = read("data/swedish_regions.json", encoding: none)
 #let world = read("data/world.json", encoding: none)
 #let world_no_ant = read("data/world_no_antartica.json", encoding: none)
+#let cities = read("data/cities.geojson", encoding: none)
 
 // --- Example helper ---
 // Show rule that displays a code block and executes it.
 
-#let doc-scope = ("render-map": render-map, sweden: sweden, world: world)
+#let doc-scope = ("render-map": render-map, "join": join, sweden: sweden, world: world, cities: cities)
 #let code-block(body) = block(
   width: 100%, inset: 8pt, radius: 3pt,
   fill: luma(245), stroke: 0.5pt + luma(200), body,
@@ -141,7 +142,7 @@ All rendering options are passed as a Typst dictionary. Every field is optional 
   "point_color":  null,        // string – defaults to fill; "none" hides points
 
   // --- Labels ---
-  "label":             null,    // string "{name}" or array of line objects
+  "label":             null,    // "{name}", a line object, or an array of them
   "label_color":       "black", // string
   "label_font_size":   0.3,     // float
   "label_font_family": "Arial", // string
@@ -294,6 +295,135 @@ Use `fill_pattern` with `"hatched"`, `"crosshatched"`, or `"dotted"`. The patter
 
 #pagebreak()
 
+== Choropleth
+
+A *choropleth* colors each feature from a numeric property. Set `fill_scale` with the `property` to read, a scale `type`, and a `range` of colors; it overrides `fill` per feature. Use `type: "quantize"` for discrete bins or `type: "linear"` to interpolate between hex colors. The `domain` (min, max) is computed from the data when omitted, and `default` colors features whose property is missing.
+
+Add a `legend` to draw a swatch key in any corner (`pos`): `"top-left"`, `"top-right"`, `"bottom-left"`, or `"bottom-right"`.
+
+```example
+#render-map(sweden, (
+    fill_scale: (
+      property: "color",
+      type: "quantize",
+      range: ("#fee5d9", "#fcae91", "#fb6a4a",
+              "#de2d26", "#a50f15"),
+    ),
+    stroke: "white",
+    stroke_width: 0.02,
+    point_color: "none",
+    legend: (title: "color", pos: "bottom-left"),
+  ), width: 80%)
+```
+
+With `type: "linear"` the `range` becomes gradient stops, interpolated across an explicit `domain`:
+
+```example
+#render-map(sweden, (
+    fill_scale: (
+      property: "color",
+      type: "linear",
+      domain: (0, 4),
+      range: ("#ffffcc", "#006837"),
+    ),
+    stroke: "white",
+    stroke_width: 0.02,
+    point_color: "none",
+    legend: (title: "color", pos: "bottom-left"),
+  ), width: 80%)
+```
+
+=== Categorical coloring
+
+For non-numeric data, `type: "category"` maps each distinct value to a color — for political, land-use, or typological maps. Give an explicit `categories` map (`value → color`), or a `palette` that is auto-assigned to the distinct values in first-seen order. The property may be a string or a number; unmatched features take `default`.
+
+```example
+#render-map(sweden, (
+    fill_scale: (property: "color", type: "category",
+      categories: (
+        "0": "#e41a1c", "1": "#377eb8",
+        "2": "#4daf4a", "3": "#984ea3", "4": "#ff7f00"),
+    ),
+    stroke: "white",
+    stroke_width: 0.02,
+    point_color: "none",
+    legend: (title: "class", pos: "bottom-left"),
+  ), width: 80%)
+```
+
+=== Joining external data
+
+A `fill_scale` reads a numeric property that must be present on each feature. When your data lives in a separate table (a CSV, a database export) rather than inside the GeoJSON, pass it to `render-map` as `data` and it is merged into each feature's properties, matched on `key`. `data` is either a dictionary keyed by the join value, or an array of records (e.g. from `csv(.., row-type: dictionary)`); joined values override existing properties. The standalone `join(code, data, key: ..)` function returns the merged GeoJSON if you prefer to do it explicitly.
+
+Here `rate` is *not* in the GeoJSON — it is joined from an external dictionary keyed by each region's `l_id`. Regions with no matching row take the scale's `default` color.
+
+```example
+#let rates = ("1": (rate: 90), "4": (rate: 55),
+  "5": (rate: 30), "6": (rate: 70), "21": (rate: 45))
+
+#render-map(sweden, (
+    fill_scale: (property: "rate", type: "quantize",
+      domain: (0, 100),
+      range: ("#f7fbff", "#c6dbef", "#6baed6",
+              "#2171b5", "#08306b")),
+    stroke: "white",
+    stroke_width: 0.02,
+    point_color: "none",
+    legend: (title: "rate", pos: "bottom-left"),
+  ), data: rates, key: "l_id", width: 80%)
+```
+
+#pagebreak()
+
+== Proportional symbols
+
+`point_radius_scale` sizes `Point` and `MultiPoint` symbols from a numeric property — a proportional-symbol (bubble) map. By default it uses `type: "sqrt"`, so symbol _area_ tracks the value (the perceptually correct encoding); use `type: "linear"` to scale the radius directly. Set `max_radius` for the largest value; `min_radius` (default 0) keeps the smallest symbols visible. The `domain` is computed from the data when omitted.
+
+Symbols are usually drawn over a *basemap* for geographic context. `render-map` takes one GeoJSON, so combine the two sources into a single `FeatureCollection` — the polygon features become the base and the point features the symbols. Here the Swedish regions form a light-grey base and each city is a `pop`-proportional bubble:
+
+```example
+#let base = json(bytes(sweden)).features
+#let pts = json(bytes(cities)).features
+#let combined = json.encode(
+  (type: "FeatureCollection", features: base + pts))
+
+#render-map(combined, (
+    projection: (type: "mercator"),
+    fill: "#e8e8e8", stroke: "white", stroke_width: 0.02,
+    point_radius_scale: (
+      property: "pop",
+      max_radius: 1.2,
+      min_radius: 0.1,
+    ),
+    point_color: "crimson",
+  ), width: 55%)
+```
+
+=== Bivariate: size and color together
+
+`point_radius_scale` and `fill_scale` compose. Because `point_color` defaults to `fill`, a `fill_scale` colors the symbols too — so each city can encode two variables at once: *size* by population and *color* by growth rate (a diverging blue–white–red scale). The scale's `default` colors the basemap regions (which have no `growth`), and a `legend` keys the color.
+
+```example
+#let base = json(bytes(sweden)).features
+#let pts = json(bytes(cities)).features
+#let combined = json.encode(
+  (type: "FeatureCollection", features: base + pts))
+
+#render-map(combined, (
+    projection: (type: "mercator"),
+    point_radius_scale: (property: "pop",
+      max_radius: 1.4, min_radius: 0.15),
+    fill_scale: (property: "growth", type: "linear",
+      domain: (0, 2.5),
+      range: ("#2166ac", "#f7f7f7", "#b2182b"),
+      default: "#e8e8e8"),
+    stroke: "white", stroke_width: 0.03,
+    legend: (title: "growth %", pos: "top-right"),
+  ), width: 55%)
+```
+
+#pagebreak()
+
 == Projections
 
 A map projection transforms coordinates from the curved surface of the Earth onto a flat plane. Every projection introduces some distortion — it is mathematically impossible to flatten a sphere without stretching, compressing, or tearing it somewhere. Projections differ in _what_ they preserve: shape (conformal), area (equal-area), or neither (compromise).
@@ -343,6 +473,50 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
 ), width: 80%))
 
 #code-block(text(size: 7pt, raw(block: true, lang: "typst", "tissot: (\n  step: 30,          // degrees between circles (default: 30)\n  radius: 5,         // circle radius in degrees (default: 5)\n  fill: \"red\",       // fill color (default: \"red\")\n  fill_opacity: 0.3, // fill opacity (default: 0.3)\n  stroke: \"red\",     // stroke color (default: \"red\")\n  stroke_width: 0.5, // stroke width (default: 0.5)\n  max_lat: 60,       // maximum latitude in degrees (default: 60)\n)")))
+
+=== Sphere and globe clipping
+
+Azimuthal globe projections (`orthographic`) *always* clip geometry to the visible hemisphere — land is cut at the limb and re-stitched along it, so coastlines close cleanly against the horizon instead of breaking, with no configuration needed:
+
+```example
+#render-map(world, (
+    projection: (type: "orthographic",
+      center_lat: 25, center_lon: 10),
+    fill: "#6fbf5f", stroke: "#356b2c",
+    stroke_width: 0.004,
+  ), width: 60%)
+```
+
+The optional `sphere` config adds a filled ocean disc behind the land: `fill` colors it (`"none"` for no ocean), and `stroke`/`stroke_width` outline it.
+
+```example
+#render-map(world, (
+    projection: (type: "orthographic",
+      center_lat: 25, center_lon: 10),
+    sphere: (fill: "#a8d4f0", stroke: "#268",
+      stroke_width: 0.005),
+    fill: "#6fbf5f", stroke: "#356b2c",
+    stroke_width: 0.004,
+    graticule: (step: 15, color: "#ffffff",
+      opacity: 0.5),
+  ), width: 60%)
+```
+
+=== Antimeridian clipping
+
+Cylindrical projections have a seam at the ±180° antimeridian. Polygons that cross it — most visibly Antarctica, which also wraps the south pole — otherwise break apart. `antimeridian: true` cuts crossing polygons and re-stitches them along the map boundary (around the pole where needed), so they fill correctly. It uses the d3-geo clip/rejoin algorithm.
+
+```example
+#render-map(world, (
+    projection: (type: "equirectangular"),
+    antimeridian: true,
+    fill: "#6fbf5f",
+    stroke: "#356b2c",
+    stroke_width: 0.04,
+  ), width: 78%)
+```
+
+#pagebreak()
 
 #let world_config = (
   stroke: "white",
@@ -672,30 +846,59 @@ On a *conformal* projection (like Mercator), circles stay circular but grow near
 
 == Putting it all together
 
-Combining projection, graticule, Tissot's indicatrix, per-feature styling, fill patterns, and multi-line labels on a single map.
+A finished thematic map combines many of these features at once: a projection with a graticule, a *choropleth* whose colors come from data joined in from an external table, a `legend` for the key, and per-feature `label`s. Here each Swedish region is colored by a `density` value (people per km², invented for the example) joined on `l_id`, with the region name drawn at its centroid.
+
+#let density = (
+  "1": (density: 360), "3": (density: 44), "4": (density: 39),
+  "5": (density: 41), "6": (density: 66), "7": (density: 32),
+  "8": (density: 26), "9": (density: 62), "10": (density: 51),
+  "12": (density: 118), "13": (density: 66), "14": (density: 71),
+  "17": (density: 36), "18": (density: 36), "19": (density: 42),
+  "20": (density: 12), "21": (density: 11), "22": (density: 6),
+  "23": (density: 5), "24": (density: 3), "25": (density: 3),
+)
 
 #grid(
   columns: (1fr, 1fr),
   gutter: 1em,
-  code-block(text(size: 7pt, raw(block: true, lang: "typst", "#render-map(sweden, (\n  stroke: \"white\",\n  stroke_width: 0.01,\n  fill: \"{fill_color}\",\n  fill_opacity: 0.8,\n  fill_pattern: \"{pattern}\",\n  point_radius: 0.15,\n  point_color: \"magenta\",\n  label: (\n    (text: \"{point}\", font_size: 0.40,\n     color: \"black\",\n     font_family: \"New Computer Modern\"),\n    (text: \"id: {l_id}\", font_size: 0.12,\n     color: \"red\"),\n  ),\n  projection: (\n    type: \"mercator\",\n    central_meridian: 16,\n  ),\n  viewbox: (-6.4, -74.4, 10, 10),\n  graticule: (step: 2, color: \"#ccc\",\n    opacity: 0.4, width: 0.3),\n  tissot: (step: 3.3, radius: 0.5,\n    fill: \"red\", fill_opacity: 0.2,\n    max_lat: 80),\n), width: 100%)"))),
+  align: horizon,
+  code-block(text(size: 6.5pt, raw(block: true, lang: "typst", ```typ
+// density: a dict of l_id -> (density: n),
+// e.g. a table read from a CSV.
+#render-map(sweden, (
+  projection: (type: "mercator",
+    central_meridian: 16),
+  fill_scale: (
+    property: "density",
+    type: "quantize",
+    domain: (0, 120),
+    range: ("#ffffcc", "#c2e699", "#78c679",
+            "#31a354", "#006837"),
+    default: "#eeeeee",
+  ),
+  legend: (title: "density (/km²)",
+    pos: "top-right"),
+  stroke: "white", stroke_width: 0.02,
+  point_color: "none",
+  label: (text: "{name}", font_size: 0.22),
+  graticule: (step: 4, color: "#ccc",
+    opacity: 0.35, width: 0.3),
+), data: density, key: "l_id")
+```.text))),
   render-map(sweden, (
+    projection: (type: "mercator", central_meridian: 16),
+    fill_scale: (
+      property: "density",
+      type: "quantize",
+      domain: (0, 120),
+      range: ("#ffffcc", "#c2e699", "#78c679", "#31a354", "#006837"),
+      default: "#eeeeee",
+    ),
+    legend: (title: "density (/km²)", pos: "top-right"),
     stroke: "white",
-    stroke_width: 0.01,
-    fill: "{fill_color}",
-    fill_opacity: 0.8,
-    fill_pattern: "{pattern}",
-    point_radius: 0.15,
-    point_color: "magenta",
-    label: (
-      (text: "{point}", font_size: 0.40, color: "black", font_family: "New Computer Modern"),
-      (text: "id: {l_id}", font_size: 0.12, color: "red"),
-    ),
-    projection: (
-      type: "mercator",
-      central_meridian: 16,
-    ),
-    viewbox: (-6.4, -74.4, 10, 10),
-    graticule: (step: 2, color: "#ccc", opacity: 0.4, width: 0.3),
-    tissot: (step: 3.3, radius: 0.5, fill: "red", fill_opacity: 0.2, max_lat: 80),
-  ), width: 100%),
+    stroke_width: 0.02,
+    point_color: "none",
+    label: (text: "{name}", font_size: 0.22, color: "#222", font_family: "New Computer Modern"),
+    graticule: (step: 4, color: "#ccc", opacity: 0.35, width: 0.3),
+  ), data: density, key: "l_id", width: 100%),
 )

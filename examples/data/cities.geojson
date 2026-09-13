@@ -1,0 +1,11 @@
+{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"name":"Stockholm","pop":975000,"growth":1.8},"geometry":{"type":"Point","coordinates":[18.07,59.33]}},
+{"type":"Feature","properties":{"name":"Göteborg","pop":580000,"growth":1.5},"geometry":{"type":"Point","coordinates":[11.97,57.71]}},
+{"type":"Feature","properties":{"name":"Malmö","pop":350000,"growth":2.4},"geometry":{"type":"Point","coordinates":[13.00,55.60]}},
+{"type":"Feature","properties":{"name":"Uppsala","pop":230000,"growth":2.0},"geometry":{"type":"Point","coordinates":[17.64,59.86]}},
+{"type":"Feature","properties":{"name":"Västerås","pop":155000,"growth":1.0},"geometry":{"type":"Point","coordinates":[16.55,59.61]}},
+{"type":"Feature","properties":{"name":"Linköping","pop":160000,"growth":1.3},"geometry":{"type":"Point","coordinates":[15.62,58.41]}},
+{"type":"Feature","properties":{"name":"Umeå","pop":130000,"growth":1.6},"geometry":{"type":"Point","coordinates":[20.26,63.83]}},
+{"type":"Feature","properties":{"name":"Luleå","pop":78000,"growth":0.6},"geometry":{"type":"Point","coordinates":[22.15,65.58]}},
+{"type":"Feature","properties":{"name":"Kiruna","pop":23000,"growth":0.2},"geometry":{"type":"Point","coordinates":[20.22,67.86]}}
+]}
