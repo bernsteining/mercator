@@ -55,6 +55,9 @@ pub struct StyleConfig {
     pub label: Option<LabelConfig>,
     pub point_radius: Option<f64>,
     pub point_color: Option<String>,
+    /// Marker shape for Point/MultiPoint: `circle` (default), `square`,
+    /// `diamond`, `triangle`, `cross`, or `star`. Supports `{property}`.
+    pub point_shape: Option<String>,
     pub fill_pattern: Option<String>,
     pub projection: Option<ProjectionConfig>,
     pub graticule: Option<GraticuleConfig>,
@@ -146,6 +149,7 @@ impl Default for StyleConfig {
             label: None,
             point_radius: None,
             point_color: None,
+            point_shape: None,
             fill_pattern: None,
             projection: None,
             graticule: None,
@@ -166,6 +170,7 @@ pub struct ResolvedStyle<'a> {
     pub fill_opacity: f64,
     pub point_radius: f64,
     pub point_color: Option<Cow<'a, str>>,
+    pub point_shape: Cow<'a, str>,
     pub fill_pattern: Option<Cow<'a, str>>,
 }
 
@@ -198,6 +203,12 @@ pub fn resolve_style<'a>(
         resolve_field(template, "none", properties)
     });
 
+    let point_shape = config
+        .point_shape
+        .as_deref()
+        .map(|template| resolve_field(template, "circle", properties))
+        .unwrap_or(Cow::Borrowed("circle"));
+
     ResolvedStyle {
         stroke: resolve_field(&config.stroke, "black", properties),
         stroke_width: config.stroke_width,
@@ -205,6 +216,7 @@ pub fn resolve_style<'a>(
         fill_opacity: config.fill_opacity,
         point_radius: config.point_radius.unwrap_or(config.stroke_width * 5.0),
         point_color,
+        point_shape,
         fill_pattern,
     }
 }

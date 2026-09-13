@@ -38,6 +38,7 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 | `fill_pattern` | string | none | `"hatched"`, `"crosshatched"`, or `"dotted"`. Supports `{property_name}`. |
 | `point_radius` | float | `stroke_width * 5` | Radius for Point/MultiPoint geometries |
 | `point_color` | string | same as `fill` | Point fill color. `"none"` hides points. Supports `{property_name}`. |
+| `point_shape` | string | `"circle"` | Marker shape for Point/MultiPoint: `circle`, `square`, `diamond`, `triangle`, `cross`, or `star`. Supports `{property_name}`. |
 | `viewbox` | array | auto | Manual viewbox as `(x, y, width, height)` |
 | `viewbox_padding` | float | `0.15` | Padding fraction around auto-computed viewbox |
 | `label` | string or array | none | Label template: `"{name}"` or array of `{text, font_size, color, font_family}` objects |
@@ -199,6 +200,17 @@ Draws a swatch key for the active `fill_scale` inside a viewbox corner.
 ### joining external data
 
 `fill_scale` reads a property that must exist on each feature. If your data lives in a separate table instead of inside the GeoJSON, pass it to `render-map` as `data` (with a `key`) and it is merged into each feature's properties before rendering — the classic GIS "join". `data` is a dictionary keyed by the join value, or an array of records (e.g. from `csv(.., row-type: dictionary)`). The standalone `join(code, data, key: ..)` returns the merged GeoJSON.
+
+### range rings (geo-circle)
+
+`geo-circle(center: (lon, lat), radius: deg, steps: 64, properties: (:))` builds a GeoJSON polygon approximating a spherical circle (a great-circle "range ring"), like `d3.geoCircle`. It returns a Feature dictionary; combine several (and optionally your basemap) into a `FeatureCollection` and `json.encode` before rendering:
+
+```typ
+#let ring = geo-circle(center: (18.07, 59.33), radius: 500 / 111.32) // ~500 km
+#render-map(json.encode((type: "FeatureCollection", features: (ring,))), (
+  fill: "#4488ff", fill_opacity: 0.3, stroke: "#1144aa",
+))
+```
 
 ```typ
 #let rates = ("SE-01": (rate: 90), "SE-03": (rate: 55))

@@ -4,6 +4,35 @@
 
 #let mercator = plugin("./mercator.wasm")
 
+/// Builds a GeoJSON polygon approximating a spherical circle (a "range ring")
+/// of `radius` degrees around `center`, following the great circle — like
+/// d3.geoCircle. Returns a GeoJSON Feature dictionary; wrap several in a
+/// `(type: "FeatureCollection", features: (..))` (optionally with your basemap)
+/// and `json.encode` before passing to `render-map`.
+///
+/// - center (array): `(lon, lat)` of the circle's center, in degrees.
+/// - radius (float): angular radius in degrees (e.g. `500 / 111.32` for ~500 km).
+/// - steps (int): number of segments around the ring (default 64).
+/// - properties (dictionary): properties attached to the feature (default empty).
+/// -> dictionary
+#let geo-circle(center: (0, 0), radius: 10, steps: 64, properties: (:)) = {
+  let d2r = calc.pi / 180
+  let lon1 = center.at(0) * d2r
+  let lat1 = center.at(1) * d2r
+  let d = radius * d2r
+  let coords = ()
+  for i in range(steps + 1) {
+    let brng = 2 * calc.pi * i / steps
+    let lat2 = calc.asin(calc.sin(lat1) * calc.cos(d) + calc.cos(lat1) * calc.sin(d) * calc.cos(brng)).rad()
+    let lon2 = lon1 + calc.atan2(
+      calc.cos(d) - calc.sin(lat1) * calc.sin(lat2),
+      calc.sin(brng) * calc.sin(d) * calc.cos(lat1),
+    ).rad()
+    coords.push((lon2 / d2r, lat2 / d2r))
+  }
+  (type: "Feature", properties: properties, geometry: (type: "Polygon", coordinates: (coords,)))
+}
+
 /// Renders a GeoJSON and returns SVG code for it.
 ///
 /// - code (string, bytes): GeoJSON to be rendered.

@@ -171,24 +171,74 @@ fn write_geometry(
             if x.is_nan() || y.is_nan() {
                 continue;
             }
-            svg.push_str(r#"<circle cx=""#);
-            push_f64(svg, *x);
-            svg.push_str(r#"" cy=""#);
-            push_f64(svg, *y);
-            svg.push_str(r#"" r=""#);
-            push_f64(svg, style.point_radius);
-            svg.push_str(r#"" fill=""#);
-            svg.push_str(point_fill);
-            svg.push_str(r#"" fill-opacity=""#);
-            push_f64(svg, style.fill_opacity);
-            svg.push_str(r#"" stroke=""#);
-            svg.push_str(&style.stroke);
-            svg.push_str(r#"" stroke-width=""#);
-            push_f64(svg, style.stroke_width);
-            svg.push_str(r#""/>"#);
+            write_marker(svg, &style.point_shape, *x, *y, style.point_radius, point_fill, style.fill_opacity, &style.stroke, style.stroke_width);
         }
     }
 }
+
+/// Emit one point marker of the given `shape` centered at `(x, y)` with size `r`.
+/// Non-circle shapes are drawn as a `<path>` inscribed in the radius-`r` circle.
+#[allow(clippy::too_many_arguments)]
+fn write_marker(svg: &mut String, shape: &str, x: f64, y: f64, r: f64, fill: &str, fill_opacity: f64, stroke: &str, stroke_width: f64) {
+    let common = |svg: &mut String| {
+        svg.push_str(r#" fill=""#);
+        svg.push_str(fill);
+        svg.push_str(r#"" fill-opacity=""#);
+        push_f64(svg, fill_opacity);
+        svg.push_str(r#"" stroke=""#);
+        svg.push_str(stroke);
+        svg.push_str(r#"" stroke-width=""#);
+        push_f64(svg, stroke_width);
+        svg.push_str(r#""/>"#);
+    };
+    // Vertex list for polygon markers (fraction of r, relative to center).
+    let poly: Option<&[(f64, f64)]> = match shape {
+        "square" => Some(&[(-0.886, -0.886), (0.886, -0.886), (0.886, 0.886), (-0.886, 0.886)]),
+        "diamond" => Some(&[(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)]),
+        "triangle" => Some(&[(0.0, -1.0), (0.866, 0.5), (-0.866, 0.5)]),
+        "cross" | "plus" => Some(&[
+            (-0.33, -1.0), (0.33, -1.0), (0.33, -0.33), (1.0, -0.33), (1.0, 0.33),
+            (0.33, 0.33), (0.33, 1.0), (-0.33, 1.0), (-0.33, 0.33), (-1.0, 0.33),
+            (-1.0, -0.33), (-0.33, -0.33),
+        ]),
+        "star" => Some(&STAR),
+        _ => None, // circle
+    };
+    match poly {
+        None => {
+            svg.push_str(r#"<circle cx=""#);
+            push_f64(svg, x);
+            svg.push_str(r#"" cy=""#);
+            push_f64(svg, y);
+            svg.push_str(r#"" r=""#);
+            push_f64(svg, r);
+            common(svg);
+        }
+        Some(verts) => {
+            svg.push_str(r#"<path d=""#);
+            for (i, (dx, dy)) in verts.iter().enumerate() {
+                svg.push(if i == 0 { 'M' } else { 'L' });
+                push_f64(svg, x + dx * r);
+                svg.push(' ');
+                push_f64(svg, y + dy * r);
+                svg.push(' ');
+            }
+            svg.push('Z');
+            svg.push('"');
+            common(svg);
+        }
+    }
+}
+
+/// 5-pointed star vertices (outer radius 1, inner 0.5), pointing up.
+static STAR: [(f64, f64); 10] = {
+    // Precomputed cos/sin at 36° steps from the top (-90°), alternating radii.
+    [
+        (0.0, -1.0), (0.2939, -0.4045), (0.9511, -0.3090), (0.4755, 0.1545),
+        (0.5878, 0.8090), (0.0, 0.5), (-0.5878, 0.8090), (-0.4755, 0.1545),
+        (-0.9511, -0.3090), (-0.2939, -0.4045),
+    ]
+};
 
 #[wasm_func]
 pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
