@@ -69,6 +69,10 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 | `natural_earth` | Pseudo-cylindrical | `central_meridian` |
 | `hammer` | Pseudo-cylindrical | `central_meridian` |
 | `winkel_tripel` | Pseudo-cylindrical | `central_meridian` |
+| `mollweide` | Pseudo-cylindrical (equal-area) | `central_meridian` |
+| `sinusoidal` | Pseudo-cylindrical (equal-area) | `central_meridian` |
+| `miller` | Cylindrical (compromise) | `central_meridian` |
+| `aitoff` | Lenticular (compromise) | `central_meridian` |
 | `orthographic` | Azimuthal | `center_lat`, `center_lon` |
 | `gnomonic` | Azimuthal | `center_lat`, `center_lon` |
 | `lambert_azimuthal_equal_area` | Azimuthal | `center_lat`, `center_lon` |

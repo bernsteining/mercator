@@ -1,3 +1,4 @@
+mod aitoff;
 mod albers;
 mod authagraph;
 pub(crate) mod azimuthal;
@@ -11,11 +12,14 @@ mod hammer;
 mod lambert;
 mod lambert_azimuthal;
 mod mercator;
+mod miller;
+mod mollweide;
 mod natural_earth;
 mod orthographic;
 mod peirce;
 mod polyconic;
 mod robinson;
+mod sinusoidal;
 mod wiechel;
 mod winkel_tripel;
 
@@ -160,6 +164,22 @@ pub enum ProjectionConfig {
         #[serde(default)]
         central_meridian: f64,
     },
+    Sinusoidal {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Miller {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Mollweide {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Aitoff {
+        #[serde(default)]
+        central_meridian: f64,
+    },
     Authagraph,
 }
 
@@ -181,6 +201,10 @@ pub(crate) enum Proj {
     AzimuthalEquidistant(azimuthal_equidistant::AzimuthalEquidistant),
     Hammer(hammer::Hammer),
     WinkelTripel(winkel_tripel::WinkelTripel),
+    Sinusoidal(sinusoidal::Sinusoidal),
+    Miller(miller::Miller),
+    Mollweide(mollweide::Mollweide),
+    Aitoff(aitoff::Aitoff),
     Authagraph(authagraph::Compiled),
 }
 
@@ -204,6 +228,10 @@ macro_rules! dispatch {
             Proj::AzimuthalEquidistant(p) => p.$method($($arg),*),
             Proj::Hammer(p) => p.$method($($arg),*),
             Proj::WinkelTripel(p) => p.$method($($arg),*),
+            Proj::Sinusoidal(p) => p.$method($($arg),*),
+            Proj::Miller(p) => p.$method($($arg),*),
+            Proj::Mollweide(p) => p.$method($($arg),*),
+            Proj::Aitoff(p) => p.$method($($arg),*),
             Proj::Authagraph(p) => p.$method($($arg),*),
         }
     };
@@ -319,6 +347,18 @@ pub fn from_config(config: Option<ProjectionConfig>) -> Proj {
             }
             ProjectionConfig::WinkelTripel { central_meridian } => {
                 Proj::WinkelTripel(winkel_tripel::WinkelTripel::new(central_meridian))
+            }
+            ProjectionConfig::Sinusoidal { central_meridian } => {
+                Proj::Sinusoidal(sinusoidal::Sinusoidal { central_meridian })
+            }
+            ProjectionConfig::Miller { central_meridian } => {
+                Proj::Miller(miller::Miller { central_meridian })
+            }
+            ProjectionConfig::Mollweide { central_meridian } => {
+                Proj::Mollweide(mollweide::Mollweide { central_meridian })
+            }
+            ProjectionConfig::Aitoff { central_meridian } => {
+                Proj::Aitoff(aitoff::Aitoff { central_meridian })
             }
             ProjectionConfig::Authagraph => Proj::Authagraph(authagraph::compile()),
         },
