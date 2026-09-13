@@ -135,12 +135,18 @@ Colors each feature from a numeric property (a choropleth), overriding `fill`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `property` | string | required | Property to read from each feature |
-| `type` | string | `"quantize"` | `"quantize"` (discrete bins), `"linear"` (interpolated), or `"category"` |
+| `type` | string | `"quantize"` | `"quantize"` (equal-width bins), `"quantile"` (equal-count bins), `"threshold"` (explicit breaks), `"linear"` (interpolated), `"diverging"` (interpolated around a midpoint), or `"category"` |
 | `domain` | array | auto | `(min, max)` for numeric types; computed from the data when omitted |
-| `range` | array | required* | Colors: discrete bins for `quantize`, gradient stops for `linear` (needs hex). *Not used by `category`. |
+| `range` | array | required* | Colors: discrete bins for `quantize`/`quantile`/`threshold`, gradient stops for `linear`/`diverging` (needs hex). *Optional if `scheme` is set; not used by `category`. |
+| `scheme` | string | none | Named color scheme used when `range` is omitted — sequential (`blues`, `greens`, `oranges`, `reds`, `purples`, `greys`, `viridis`, `magma`, `ylgnbu`, `ylorrd`), diverging (`rdbu`, `rdylbu`, `brbg`, `piyg`, `spectral`), or categorical (`category10`/`tableau10`, `set1`, `set2`, `dark2`) |
+| `n` | int | `5` | Number of classes to sample from `scheme` for `quantize`/`quantile` |
+| `breaks` | array | none | `threshold` only: N break points → N+1 colors |
+| `midpoint` | float | domain mid | `diverging` only: value pinned to the middle color |
 | `categories` | object | none | `category` only: explicit `value → color` map |
-| `palette` | array | none | `category` only: colors auto-assigned to distinct values (first-seen order) when `categories` is omitted |
+| `palette` | array | none | `category` only: colors auto-assigned to distinct values (first-seen order) when `categories`/`scheme` are omitted |
 | `default` | string | `"#cccccc"` | Color for features whose value is missing/unmatched |
+
+`quantile` bins the data so each color holds ~the same number of features (robust to outliers); `threshold` uses your explicit `breaks`; `diverging` anchors `midpoint` to the middle color (for signed data). Any of these can take a named `scheme` instead of a hand-written `range`, e.g. `(property: "gdp", type: "quantile", scheme: "viridis", n: 6)`.
 
 For `type: "category"` the property can be a string or number; each distinct value gets a color, either from an explicit `categories` map or auto-assigned from a `palette`:
 

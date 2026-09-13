@@ -13,17 +13,30 @@ fn default_scale_type() -> String {
     "quantize".to_string()
 }
 
-/// `fill_scale` config: bind `property` to a color `range` via a scale `type`.
+/// `fill_scale` config: bind `property` to a color `range`/`scheme` via a scale `type`.
 #[derive(Debug, Deserialize)]
 pub struct FillScale {
     pub property: String,
+    /// `quantize` | `quantile` | `threshold` | `linear` | `diverging` | `category`.
     #[serde(rename = "type", default = "default_scale_type")]
     pub scale_type: String,
-    /// `(min, max)`. Auto-computed from the data when omitted (`quantize`/`linear`).
+    /// `(min, max)`. Auto-computed from the data when omitted (`quantize`/`linear`/…).
     pub domain: Option<(f64, f64)>,
-    /// Colors: discrete bins for `quantize`, gradient stops for `linear`.
+    /// Colors: discrete bins for `quantize`/`quantile`/`threshold`, gradient stops
+    /// for `linear`/`diverging`. Omit and set `scheme` to use a named palette.
     #[serde(default)]
     pub range: Vec<String>,
+    /// Named color scheme (e.g. `blues`, `viridis`, `rdbu`, `spectral`, `tableau10`)
+    /// used when `range` is empty. See `schemes` below.
+    pub scheme: Option<String>,
+    /// Number of classes to sample from a `scheme` for discrete scales
+    /// (`quantize`/`quantile`). Defaults to 5.
+    pub n: Option<usize>,
+    /// Explicit break points for `type: "threshold"` (N breaks → N+1 colors).
+    pub breaks: Option<Vec<f64>>,
+    /// Midpoint anchored to the middle color for `type: "diverging"`
+    /// (default: the domain's midpoint).
+    pub midpoint: Option<f64>,
     /// Explicit value→color map for `type: "category"`.
     pub categories: Option<Map<String, Value>>,
     /// Palette auto-assigned to distinct values (in first-seen order) for
@@ -129,10 +142,78 @@ pub struct LegendConfig {
 enum Kind {
     /// `n` equal-width bins over `[min, max]` → `colors[bin]`.
     Quantize { min: f64, max: f64, colors: Vec<String> },
+    /// Equal-count bins: `thresholds` (len = colors-1) split the sorted data so
+    /// each bin holds ~the same number of features. Robust to outliers.
+    Quantile { thresholds: Vec<f64>, colors: Vec<String> },
+    /// Explicit break points: `breaks` (len = colors-1) → `colors[bin]`.
+    Threshold { breaks: Vec<f64>, colors: Vec<String> },
     /// Interpolate RGB between evenly-spaced `stops` over `[min, max]`.
     Linear { min: f64, max: f64, stops: Vec<[f64; 3]> },
+    /// Like `Linear` but `mid` is pinned to the middle stop (for +/- data).
+    Diverging { min: f64, mid: f64, max: f64, stops: Vec<[f64; 3]> },
     /// Map a categorical value to a color. `lookup` resolves; `order` drives the legend.
     Category { lookup: HashMap<String, String>, order: Vec<(String, String)> },
+}
+
+/// Named color schemes as anchor stops: sampled for discrete N-class ramps, used
+/// directly as gradient stops for `linear`/`diverging`, cycled for `category`.
+fn scheme_stops(name: &str) -> Option<&'static [&'static str]> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        // sequential
+        "blues" => &["#f7fbff", "#c6dbef", "#6baed6", "#2171b5", "#08306b"],
+        "greens" => &["#f7fcf5", "#c7e9c0", "#74c476", "#238b45", "#00441b"],
+        "oranges" => &["#fff5eb", "#fdd0a2", "#fd8d3c", "#d94801", "#7f2704"],
+        "reds" => &["#fff5f0", "#fcbba1", "#fb6a4a", "#cb181d", "#67000d"],
+        "purples" => &["#fcfbfd", "#dadaeb", "#9e9ac8", "#6a51a3", "#3f007d"],
+        "greys" | "grays" => &["#ffffff", "#d9d9d9", "#969696", "#525252", "#000000"],
+        "viridis" => &["#440154", "#414487", "#2a788e", "#22a884", "#7ad151", "#fde725"],
+        "magma" => &["#000004", "#3b0f70", "#8c2981", "#de4968", "#fe9f6d", "#fcfdbf"],
+        "ylgnbu" => &["#ffffd9", "#c7e9b4", "#41b6c4", "#225ea8", "#081d58"],
+        "ylorrd" => &["#ffffcc", "#fed976", "#fd8d3c", "#e31a1c", "#800026"],
+        // diverging
+        "rdbu" => &["#b2182b", "#ef8a62", "#fddbc7", "#f7f7f7", "#d1e5f0", "#67a9cf", "#2166ac"],
+        "rdylbu" => &["#d73027", "#fc8d59", "#fee090", "#ffffbf", "#e0f3f8", "#91bfdb", "#4575b4"],
+        "brbg" => &["#8c510a", "#d8b365", "#f6e8c3", "#f5f5f5", "#c7eae5", "#5ab4ac", "#01665e"],
+        "piyg" => &["#c51b7d", "#e9a3c9", "#fde0ef", "#f7f7f7", "#e6f5d0", "#a1d76a", "#4d9221"],
+        "spectral" => &["#d53e4f", "#fc8d59", "#fee08b", "#ffffbf", "#e6f598", "#99d594", "#3288bd"],
+        // categorical
+        "category10" | "tableau10" => &["#4e79a7", "#f28e2c", "#e15759", "#76b7b2", "#59a14f", "#edc949", "#af7aa1", "#ff9da7", "#9c755f", "#bab0ab"],
+        "set1" => &["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#ffff33", "#a65628", "#f781bf"],
+        "set2" => &["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", "#e5c494"],
+        "dark2" => &["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "#a6761d"],
+        _ => return None,
+    })
+}
+
+/// Interpolate a piecewise-linear RGB gradient of `stops` at `t` in `[0,1]`.
+fn interp_stops(stops: &[[f64; 3]], t: f64) -> String {
+    if stops.is_empty() {
+        return "#cccccc".to_string();
+    }
+    if stops.len() == 1 {
+        let a = stops[0];
+        return format!("#{:02x}{:02x}{:02x}", a[0] as u8, a[1] as u8, a[2] as u8);
+    }
+    let t = t.clamp(0.0, 1.0);
+    let seg = (stops.len() - 1) as f64;
+    let pos = t * seg;
+    let i = (pos.floor() as usize).min(stops.len() - 2);
+    let f = pos - i as f64;
+    let (a, b) = (stops[i], stops[i + 1]);
+    let ch = |k: usize| (a[k] + (b[k] - a[k]) * f).round() as u8;
+    format!("#{:02x}{:02x}{:02x}", ch(0), ch(1), ch(2))
+}
+
+/// N discrete colors sampled evenly across a stop gradient (for class ramps).
+fn sample_gradient(stops: &[[f64; 3]], n: usize) -> Vec<String> {
+    (0..n)
+        .map(|i| interp_stops(stops, if n <= 1 { 0.5 } else { i as f64 / (n - 1) as f64 }))
+        .collect()
+}
+
+/// Parse a scheme name into its anchor stops as RGB triples.
+fn scheme_as_stops(name: &str) -> Option<Vec<[f64; 3]>> {
+    scheme_stops(name).map(|s| s.iter().filter_map(|c| parse_hex(c)).collect())
 }
 
 /// Stringify a property value into a category key (string, number, or bool).
@@ -219,8 +300,16 @@ impl ColorScale {
                         order.push((k.clone(), color.to_string()));
                     }
                 }
-            } else if let Some(palette) = &cfg.palette {
-                // Auto-assign palette colors to distinct values, cycling if needed.
+            } else {
+                // Palette from explicit `palette` or a named `scheme`; cycled over
+                // distinct values in first-seen order.
+                let palette: Vec<String> = if let Some(p) = &cfg.palette {
+                    p.clone()
+                } else if let Some(sch) = &cfg.scheme {
+                    scheme_stops(sch).map(|s| s.iter().map(|c| c.to_string()).collect()).unwrap_or_default()
+                } else {
+                    return None; // category needs `categories`, `palette`, or `scheme`
+                };
                 if palette.is_empty() {
                     return None;
                 }
@@ -229,8 +318,6 @@ impl ColorScale {
                     lookup.insert(key.clone(), color.clone());
                     order.push((key, color));
                 }
-            } else {
-                return None; // category needs `categories` or `palette`
             }
             if order.is_empty() {
                 return None;
@@ -242,9 +329,64 @@ impl ColorScale {
             });
         }
 
-        if cfg.range.is_empty() {
-            return None;
+        // Discrete colors: explicit `range`, else `n` sampled from a named `scheme`.
+        let discrete_colors = |n: usize| -> Vec<String> {
+            if !cfg.range.is_empty() {
+                cfg.range.clone()
+            } else if let Some(stops) = cfg.scheme.as_deref().and_then(scheme_as_stops) {
+                sample_gradient(&stops, n)
+            } else {
+                Vec::new()
+            }
+        };
+        // Gradient stops: explicit `range`, else a named `scheme`'s anchors.
+        let gradient_stops = || -> Vec<[f64; 3]> {
+            if !cfg.range.is_empty() {
+                cfg.range.iter().filter_map(|c| parse_hex(c)).collect()
+            } else if let Some(stops) = cfg.scheme.as_deref().and_then(scheme_as_stops) {
+                stops
+            } else {
+                Vec::new()
+            }
+        };
+        let n_classes = cfg.n.unwrap_or(5).max(1);
+
+        // Types that don't need a [min,max] domain:
+        if cfg.scale_type == "threshold" {
+            let breaks = cfg.breaks.clone().unwrap_or_default();
+            if breaks.is_empty() {
+                return None; // threshold needs explicit `breaks`
+            }
+            let colors = discrete_colors(breaks.len() + 1);
+            if colors.is_empty() {
+                return None;
+            }
+            return Some(ColorScale { property: cfg.property.clone(), default, kind: Kind::Threshold { breaks, colors } });
         }
+        if cfg.scale_type == "quantile" {
+            let colors = discrete_colors(n_classes);
+            if colors.is_empty() {
+                return None;
+            }
+            let mut vals: Vec<f64> = feature_values(gj, &cfg.property).collect();
+            if vals.is_empty() {
+                return None;
+            }
+            vals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let nb = colors.len();
+            // Interpolated quantile break at each bin boundary of the sorted data.
+            let thresholds: Vec<f64> = (1..nb)
+                .map(|i| {
+                    let p = i as f64 / nb as f64 * (vals.len() - 1) as f64;
+                    let lo = p.floor() as usize;
+                    let hi = (lo + 1).min(vals.len() - 1);
+                    vals[lo] + (vals[hi] - vals[lo]) * (p - lo as f64)
+                })
+                .collect();
+            return Some(ColorScale { property: cfg.property.clone(), default, kind: Kind::Quantile { thresholds, colors } });
+        }
+
+        // quantize / linear / diverging need a numeric [min, max] domain.
         let (min, max) = match cfg.domain {
             Some((a, b)) => (a, b),
             None => {
@@ -261,15 +403,25 @@ impl ColorScale {
             }
         };
         let kind = if cfg.scale_type == "linear" {
-            let stops: Vec<[f64; 3]> = cfg.range.iter().filter_map(|c| parse_hex(c)).collect();
+            let stops = gradient_stops();
             if stops.len() < 2 {
-                // linear needs ≥2 parseable hex stops; fall back to discrete bins.
-                Kind::Quantize { min, max, colors: cfg.range.clone() }
+                Kind::Quantize { min, max, colors: discrete_colors(n_classes) }
             } else {
                 Kind::Linear { min, max, stops }
             }
+        } else if cfg.scale_type == "diverging" {
+            let stops = gradient_stops();
+            if stops.len() < 2 {
+                return None;
+            }
+            let mid = cfg.midpoint.unwrap_or((min + max) / 2.0);
+            Kind::Diverging { min, mid, max, stops }
         } else {
-            Kind::Quantize { min, max, colors: cfg.range.clone() }
+            let colors = discrete_colors(n_classes);
+            if colors.is_empty() {
+                return None;
+            }
+            Kind::Quantize { min, max, colors }
         };
         Some(ColorScale { property: cfg.property.clone(), default, kind })
     }
@@ -305,16 +457,22 @@ impl ColorScale {
                 let idx = ((t * n as f64) as usize).min(n - 1);
                 colors[idx].clone()
             }
-            Kind::Linear { min, max, stops } => {
-                let t = Self::norm(*min, *max, value);
-                let seg = (stops.len() - 1) as f64;
-                let pos = t * seg;
-                let i = (pos.floor() as usize).min(stops.len() - 2);
-                let f = pos - i as f64;
-                let a = stops[i];
-                let b = stops[i + 1];
-                let ch = |k: usize| (a[k] + (b[k] - a[k]) * f).round() as u8;
-                format!("#{:02x}{:02x}{:02x}", ch(0), ch(1), ch(2))
+            Kind::Quantile { thresholds, colors } | Kind::Threshold { breaks: thresholds, colors } => {
+                // First threshold the value falls below picks the bin.
+                let idx = thresholds.iter().position(|&t| value < t).unwrap_or(colors.len() - 1);
+                colors[idx.min(colors.len() - 1)].clone()
+            }
+            Kind::Linear { min, max, stops } => interp_stops(stops, Self::norm(*min, *max, value)),
+            Kind::Diverging { min, mid, max, stops } => {
+                // Pin `mid` to t = 0.5 so the middle stop sits at the midpoint.
+                let t = if value <= *mid {
+                    if mid > min { 0.5 * (value - min) / (mid - min) } else { 0.0 }
+                } else if max > mid {
+                    0.5 + 0.5 * (value - mid) / (max - mid)
+                } else {
+                    1.0
+                };
+                interp_stops(stops, t.clamp(0.0, 1.0))
             }
             // Handled by the early return above; kept for exhaustiveness.
             Kind::Category { .. } => self.default.clone(),
@@ -334,7 +492,24 @@ impl ColorScale {
                     })
                     .collect()
             }
-            Kind::Linear { min, max, .. } => {
+            Kind::Quantile { thresholds, colors } | Kind::Threshold { breaks: thresholds, colors } => {
+                // Bins delimited by the thresholds: "< t0", "t0 – t1", …, "≥ tn".
+                (0..colors.len())
+                    .map(|i| {
+                        let label = if colors.len() == 1 {
+                            "all".to_string()
+                        } else if i == 0 {
+                            format!("< {}", fmt_num(thresholds[0]))
+                        } else if i == colors.len() - 1 {
+                            format!("≥ {}", fmt_num(thresholds[i - 1]))
+                        } else {
+                            format!("{} – {}", fmt_num(thresholds[i - 1]), fmt_num(thresholds[i]))
+                        };
+                        (colors[i].clone(), label)
+                    })
+                    .collect()
+            }
+            Kind::Linear { min, max, .. } | Kind::Diverging { min, max, .. } => {
                 // Sample the gradient at 5 evenly-spaced stops.
                 let n = 5;
                 (0..n)
