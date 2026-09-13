@@ -1,23 +1,28 @@
 /// Mercator: Rendering GeoJSON to SVG in a WASM plugin.
 
+mod clip;
+mod clip_antimeridian;
 mod geometry;
 mod graticule;
 mod label;
+mod model;
 mod pattern;
 mod projection;
+mod scale;
 mod style;
 mod tissot;
-mod topojson_convert;
+mod topojson;
 
 use wasm_minimal_protocol::*;
 
-use geojson::GeoJson;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use geometry::{
-    first_altitude, push_f64, render_geometry, BoundsAccumulator, Centroid, RenderOutput,
-};
+use model::{Feature, FeatureId, GeoJson, Geometry};
+use scale::{render_legend, ColorScale, SizeScale};
+
+use clip::{Clip, ClipCircle};
+use geometry::{push_f64, render_geometry, BoundsAccumulator, Centroid, RenderOutput};
 use label::{build_labels, write_label};
 use pattern::{write_fill, PatternDefs};
 use projection::Proj;
@@ -47,10 +52,12 @@ fn with_parsed_geojson<R>(data: &[u8], f: impl FnOnce(&GeoJson) -> R) -> Result<
                 return Ok(f(cached));
             }
         }
-        let content = std::str::from_utf8(data).map_err(|e| e.to_string())?;
-        let parsed = match content.parse::<GeoJson>() {
+        let parsed = match model::parse(data) {
             Ok(gj) => gj,
-            Err(_) => topojson_convert::try_topojson(content)?,
+            Err(_) => {
+                let content = std::str::from_utf8(data).map_err(|e| e.to_string())?;
+                topojson::try_topojson(content)?
+            }
         };
         cache.borrow_mut().insert(key, parsed);
         let map = cache.borrow();
@@ -61,11 +68,15 @@ fn with_parsed_geojson<R>(data: &[u8], f: impl FnOnce(&GeoJson) -> R) -> Result<
 const DEFAULT_VIEWBOX_PADDING: f64 = 0.15;
 const GRATICULE_WIDTH_SCALE: f64 = 1000.0;
 
+#[allow(clippy::too_many_arguments)]
 fn render_feature(
     svg: &mut String,
-    feat: &geojson::Feature,
+    feat: &Feature,
     labels: &mut Vec<LabelInstance>,
     config: &StyleConfig,
+    scale: Option<&ColorScale>,
+    size_scale: Option<&SizeScale>,
+    clip: Option<&Clip>,
     patterns: &mut PatternDefs,
     out: &mut RenderOutput,
     proj: &Proj,
@@ -78,43 +89,44 @@ fn render_feature(
 
     let empty = serde_json::Map::new();
     let base_props = feat.properties.as_ref().unwrap_or(&empty);
-    let altitude = first_altitude(&geom.value);
-    let needs_clone = feat.id.is_some() || altitude.is_some();
 
     let owned_props;
-    let properties = if needs_clone {
+    let properties = if feat.id.is_some() {
         let mut props = base_props.clone();
-        if let Some(ref id) = feat.id {
-            match id {
-                geojson::feature::Id::String(s) => {
-                    props.entry("id".to_string()).or_insert(serde_json::Value::String(s.clone()));
-                }
-                geojson::feature::Id::Number(n) => {
-                    props.entry("id".to_string()).or_insert(serde_json::Value::Number(n.clone()));
-                }
+        match feat.id.as_ref() {
+            Some(FeatureId::String(s)) => {
+                props.entry("id".to_string()).or_insert(serde_json::Value::String(s.clone()));
             }
-        }
-        if let Some(alt) = altitude {
-            props.entry("altitude".to_string()).or_insert(
-                serde_json::Number::from_f64(alt)
-                    .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null),
-            );
+            Some(FeatureId::Number(n)) => {
+                props.entry("id".to_string()).or_insert(serde_json::Value::Number(n.clone()));
+            }
+            None => {}
         }
         owned_props = props;
         &owned_props
     } else {
         base_props
     };
-    let style = resolve_style(config, Some(properties));
+    let mut style = resolve_style(config, Some(properties));
+    // A data-driven fill_scale overrides the (possibly templated) solid fill.
+    if let Some(scale) = scale {
+        style.fill = std::borrow::Cow::Owned(scale.color_for(properties));
+    }
+    // A point_radius_scale sizes this feature's symbols by a numeric property.
+    if let Some(size_scale) = size_scale {
+        style.point_radius = size_scale.radius_for(properties);
+    }
+
+    // The centroid is only used to place labels; skip accumulating it otherwise.
+    let track_centroid = config.label.is_some();
 
     out.clear();
     let mut centroid = Centroid::new();
-    render_geometry(out, &geom.value, proj, bounds, &mut centroid);
+    render_geometry(out, geom, proj, bounds, &mut centroid, track_centroid, clip);
     write_geometry(svg, out, &style, patterns);
 
     if let Some((mut cx, cy)) = centroid.get() {
-        let is_point = matches!(geom.value, geojson::Value::Point(_) | geojson::Value::MultiPoint(_));
+        let is_point = matches!(geom, Geometry::Point(_) | Geometry::MultiPoint(_));
         if is_point {
             let r = config.point_radius.unwrap_or(config.stroke_width * 5.0);
             cx += r * 1.5;
@@ -180,10 +192,30 @@ fn write_geometry(
 
 #[wasm_func]
 pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
-    let mut conf: StyleConfig = serde_json::from_slice(config).unwrap_or_default();
+    // An empty config means "use all defaults"; anything else must parse cleanly.
+    // Surfacing the error (rather than silently falling back to defaults) makes a
+    // typo in one field visible instead of quietly wiping every style.
+    let mut conf: StyleConfig = if config.is_empty() {
+        StyleConfig::default()
+    } else {
+        serde_json::from_slice(config).map_err(|e| format!("invalid config: {e}"))?
+    };
 
     let proj = projection::from_config(conf.projection.take());
     let max_gap = proj.antimeridian_gap();
+
+    // Azimuthal (globe) projections always clip geometry to the visible hemisphere
+    // — that's a correctness fix, independent of styling. The optional `sphere`
+    // config only adds the ocean disc behind the land. For cylindrical projections,
+    // `antimeridian: true` opts into antimeridian clipping.
+    let clip: Option<Clip> = if let Some(c) = proj.clip_center() {
+        Some(Clip::Circle(ClipCircle::new(c)))
+    } else if conf.antimeridian {
+        proj.antimeridian_center()
+            .map(|central_meridian| Clip::Antimeridian { central_meridian })
+    } else {
+        None
+    };
 
     let mut labels: Vec<LabelInstance> = Vec::new();
     let mut patterns = PatternDefs::new();
@@ -191,26 +223,46 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     let mut bounds = BoundsAccumulator::new();
     let mut out = RenderOutput { max_gap, ..Default::default() };
 
-    // Single pass: render features with on-the-fly projection, accumulating bounds + centroids
-    with_parsed_geojson(geojson, |geojson| {
+    // Single pass: render features with on-the-fly projection, accumulating bounds + centroids.
+    // The color scale (choropleth) is built first — it may pre-scan properties for its domain —
+    // then returned so the legend can be drawn once the viewbox is known.
+    let scale = with_parsed_geojson(geojson, |geojson| {
+        let scale = conf
+            .fill_scale
+            .as_ref()
+            .and_then(|fs| ColorScale::build(fs, geojson));
+        let size = conf
+            .point_radius_scale
+            .as_ref()
+            .and_then(|rs| SizeScale::build(rs, geojson));
         match geojson {
-            GeoJson::FeatureCollection(fc) => {
-                for feat in &fc.features {
-                    render_feature(&mut geo_buf, feat, &mut labels, &conf, &mut patterns, &mut out, &proj, &mut bounds);
+            GeoJson::FeatureCollection(features) => {
+                for feat in features {
+                    render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds);
                 }
             }
-            GeoJson::Feature(ref feat) => {
-                render_feature(&mut geo_buf, feat, &mut labels, &conf, &mut patterns, &mut out, &proj, &mut bounds);
+            GeoJson::Feature(feat) => {
+                render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds);
             }
-            GeoJson::Geometry(ref geom) => {
+            GeoJson::Geometry(geom) => {
                 let style = resolve_style(&conf, None);
                 out.clear();
                 let mut centroid = Centroid::new();
-                render_geometry(&mut out, &geom.value, &proj, &mut bounds, &mut centroid);
+                render_geometry(&mut out, geom, &proj, &mut bounds, &mut centroid, false, clip.as_ref());
                 write_geometry(&mut geo_buf, &out, &style, &mut patterns);
             }
         }
+        scale
     })?;
+
+    // When an ocean disc is drawn, include it in the auto viewbox so it isn't
+    // clipped. Without a disc the viewbox follows the (already limb-clipped)
+    // geometry, so a partial-globe map isn't padded out to the full hemisphere.
+    if let (Some(Clip::Circle(circle)), Some(_)) = (&clip, &conf.sphere) {
+        let ((cx, cy), r) = circle.disc(&proj);
+        bounds.add(cx - r, cy - r);
+        bounds.add(cx + r, cy + r);
+    }
 
     let viewbox = conf.viewbox.unwrap_or_else(|| {
         let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
@@ -231,6 +283,26 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     // Defs (patterns) must come before geometry references
     if patterns.has_patterns() {
         patterns.write_defs(&mut svg);
+    }
+
+    // Sphere (ocean) disc, behind graticule and geometry.
+    if let (Some(Clip::Circle(circle)), Some(sphere)) = (&clip, &conf.sphere) {
+        let ((cx, cy), r) = circle.disc(&proj);
+        svg.push_str(r#"<circle cx=""#);
+        push_f64(&mut svg, cx);
+        svg.push_str(r#"" cy=""#);
+        push_f64(&mut svg, cy);
+        svg.push_str(r#"" r=""#);
+        push_f64(&mut svg, r);
+        svg.push_str(r#"" fill=""#);
+        svg.push_str(&sphere.fill);
+        if let Some(ref stroke) = sphere.stroke {
+            svg.push_str(r#"" stroke=""#);
+            svg.push_str(stroke);
+            svg.push_str(r#"" stroke-width=""#);
+            push_f64(&mut svg, sphere.stroke_width);
+        }
+        svg.push_str(r#""/>"#);
     }
 
     // Graticule
@@ -266,6 +338,11 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     // Labels
     for label in &labels {
         write_label(&mut svg, label);
+    }
+
+    // Legend (choropleth key), drawn last so it sits on top.
+    if let (Some(scale), Some(legend)) = (scale.as_ref(), conf.legend.as_ref()) {
+        render_legend(&mut svg, scale, legend, viewbox);
     }
 
     svg.push_str("</svg>");

@@ -14,7 +14,11 @@ pub struct LabelLine {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum LabelConfig {
+    /// A bare template string, e.g. `label: "{name}"`.
     Simple(String),
+    /// A single styled line, e.g. `label: (text: "{name}", font_size: 0.3)`.
+    Single(LabelLine),
+    /// Several stacked lines, e.g. `label: ((text: ".."), (text: ".."))`.
     Multi(Vec<LabelLine>),
 }
 
@@ -55,6 +59,33 @@ pub struct StyleConfig {
     pub projection: Option<ProjectionConfig>,
     pub graticule: Option<GraticuleConfig>,
     pub tissot: Option<TissotConfig>,
+    pub fill_scale: Option<crate::scale::FillScale>,
+    pub point_radius_scale: Option<crate::scale::RadiusScale>,
+    pub legend: Option<crate::scale::LegendConfig>,
+    pub sphere: Option<SphereConfig>,
+    /// Clip polygons at the antimeridian (cylindrical projections) so seam-crossing
+    /// shapes close cleanly instead of streaking across the map.
+    #[serde(default)]
+    pub antimeridian: bool,
+}
+
+/// Filled sphere/ocean disc drawn behind the land for azimuthal (globe)
+/// projections. Purely cosmetic — hemisphere clipping happens automatically for
+/// azimuthal projections whether or not a `sphere` is configured.
+#[derive(Debug, Deserialize)]
+pub struct SphereConfig {
+    #[serde(default = "default_sphere_fill")]
+    pub fill: String,
+    pub stroke: Option<String>,
+    #[serde(default = "default_sphere_stroke_width")]
+    pub stroke_width: f64,
+}
+
+fn default_sphere_fill() -> String {
+    "#cfe8ff".to_string()
+}
+fn default_sphere_stroke_width() -> f64 {
+    0.005
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +150,11 @@ impl Default for StyleConfig {
             projection: None,
             graticule: None,
             tissot: None,
+            fill_scale: None,
+            point_radius_scale: None,
+            legend: None,
+            sphere: None,
+            antimeridian: false,
         }
     }
 }

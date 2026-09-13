@@ -16,4 +16,10 @@ impl Projection for Orthographic {
 
         (x, -y)
     }
+
+    fn clip_center(&self) -> Option<[f64; 3]> {
+        let c = &self.0;
+        let lon = c.center_lon.to_radians();
+        Some([c.cos_center * lon.cos(), c.cos_center * lon.sin(), c.sin_center])
+    }
 }

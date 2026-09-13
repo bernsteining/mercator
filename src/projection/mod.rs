@@ -26,6 +26,17 @@ pub trait Projection {
     fn antimeridian_gap(&self) -> f64 {
         f64::INFINITY
     }
+    /// Unit center vector for azimuthal projections that show only the near
+    /// hemisphere (the limb clips at 90°). `None` means no hemisphere clipping.
+    fn clip_center(&self) -> Option<[f64; 3]> {
+        None
+    }
+    /// Central meridian for projections that support antimeridian clipping
+    /// (cylindrical-family, where the antimeridian is a clean seam). `None`
+    /// means antimeridian clipping is not offered for this projection.
+    fn antimeridian_center(&self) -> Option<f64> {
+        None
+    }
 }
 
 #[inline]
@@ -207,6 +218,16 @@ impl Proj {
     #[inline]
     pub fn antimeridian_gap(&self) -> f64 {
         dispatch!(self, antimeridian_gap)
+    }
+
+    #[inline]
+    pub fn clip_center(&self) -> Option<[f64; 3]> {
+        dispatch!(self, clip_center)
+    }
+
+    #[inline]
+    pub fn antimeridian_center(&self) -> Option<f64> {
+        dispatch!(self, antimeridian_center)
     }
 }
 

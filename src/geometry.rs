@@ -1,5 +1,6 @@
-use geojson::Value;
-
+use crate::clip::{clip_polygon_ring, Clip};
+use crate::clip_antimeridian::clip_polygon as clip_antimeridian_polygon;
+use crate::model::{Geometry, Pos};
 use crate::projection::Proj;
 
 /// Push f64 as string using ryu (bypasses std::fmt machinery).
@@ -102,12 +103,21 @@ impl PathBuilder {
     }
 
     /// Add a point, handling NaN skipping and gap-based path breaking.
+    /// Used by callers (graticule, tissot) that haven't already checked finiteness.
     #[inline]
     pub fn add(&mut self, x: f64, y: f64) {
         if !x.is_finite() || !y.is_finite() {
             self.prev = None;
             return;
         }
+        self.push_point(x, y);
+    }
+
+    /// Append a point already known to be finite (gap-based M/L emission). The
+    /// feature render path checks finiteness once, up front, and calls this —
+    /// avoiding a second `is_finite` test per vertex.
+    #[inline]
+    pub fn push_point(&mut self, x: f64, y: f64) {
         if let Some((px, py)) = self.prev {
             if self.is_gap(x, y, px, py) {
                 push_coord(&mut self.data, 'M', x, y);
@@ -121,6 +131,12 @@ impl PathBuilder {
             }
         }
         self.prev = Some((x, y));
+    }
+
+    /// Break the current sub-path (a non-finite/clipped vertex was encountered).
+    #[inline]
+    pub fn break_subpath(&mut self) {
+        self.prev = None;
     }
 
     /// Close the current sub-path if the last→first gap is small enough.
@@ -167,26 +183,8 @@ impl RenderOutput {
     }
 }
 
-pub fn first_altitude(value: &Value) -> Option<f64> {
-    fn walk(value: &Value) -> Option<f64> {
-        match value {
-            Value::Point(c) => c.get(2).copied(),
-            Value::MultiPoint(cs) | Value::LineString(cs) => {
-                cs.iter().find_map(|c| c.get(2).copied())
-            }
-            Value::Polygon(rs) | Value::MultiLineString(rs) => {
-                rs.iter().flatten().find_map(|c| c.get(2).copied())
-            }
-            Value::MultiPolygon(ps) => {
-                ps.iter().flatten().flatten().find_map(|c| c.get(2).copied())
-            }
-            Value::GeometryCollection(gs) => gs.iter().find_map(|g| walk(&g.value)),
-        }
-    }
-    walk(value)
-}
-
-/// Project a coordinate and update bounds + centroid accumulators.
+/// Project a point and update bounds (and, when labels need it, the centroid).
+/// Used for Point/MultiPoint geometries.
 #[inline]
 fn project_and_track(
     lon: f64,
@@ -194,82 +192,158 @@ fn project_and_track(
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
+    track_centroid: bool,
 ) -> (f64, f64) {
     let (x, y) = proj.project(lon, lat);
     if x.is_finite() && y.is_finite() {
         bounds.add(x, y);
-        centroid.add(x, y);
+        if track_centroid {
+            centroid.add(x, y);
+        }
     }
     (x, y)
 }
 
-pub fn render_geometry(
-    out: &mut RenderOutput,
-    value: &Value,
+/// Project one path vertex, check finiteness once, update accumulators, and emit.
+/// A non-finite projection (e.g. an azimuthal back-hemisphere point) breaks the
+/// sub-path. This is the per-vertex hot path for lines and polygons.
+#[inline]
+fn plot_vertex(
+    pb: &mut PathBuilder,
+    p: Pos,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
+    track_centroid: bool,
+) {
+    let (x, y) = proj.project(p.x, p.y);
+    if x.is_finite() && y.is_finite() {
+        bounds.add(x, y);
+        if track_centroid {
+            centroid.add(x, y);
+        }
+        pb.push_point(x, y);
+    } else {
+        pb.break_subpath();
+    }
+}
+
+pub fn render_geometry(
+    out: &mut RenderOutput,
+    value: &Geometry,
+    proj: &Proj,
+    bounds: &mut BoundsAccumulator,
+    centroid: &mut Centroid,
+    track_centroid: bool,
+    clip: Option<&Clip>,
 ) {
     match value {
-        Value::Point(ref coord) => {
-            if coord.len() >= 2 {
-                let (x, y) = project_and_track(coord[0], coord[1], proj, bounds, centroid);
+        Geometry::Point(coord) => {
+            let (x, y) = project_and_track(coord.x, coord.y, proj, bounds, centroid, track_centroid);
+            out.points.push((x, y));
+        }
+        Geometry::MultiPoint(coords) => {
+            for coord in coords {
+                let (x, y) = project_and_track(coord.x, coord.y, proj, bounds, centroid, track_centroid);
                 out.points.push((x, y));
             }
         }
-        Value::MultiPoint(ref coords) => {
-            for coord in coords {
-                if coord.len() >= 2 {
-                    let (x, y) = project_and_track(coord[0], coord[1], proj, bounds, centroid);
-                    out.points.push((x, y));
-                }
-            }
-        }
-        Value::LineString(ref coords) => {
+        Geometry::LineString(coords) => {
             let data = std::mem::take(&mut out.line_data);
-            out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid);
+            out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid, track_centroid);
         }
-        Value::MultiLineString(ref lines) => {
+        Geometry::MultiLineString(lines) => {
             for coords in lines {
                 let data = std::mem::take(&mut out.line_data);
-                out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid);
+                out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid, track_centroid);
             }
         }
-        Value::Polygon(ref poly) => {
+        Geometry::Polygon(poly) => {
             let data = std::mem::take(&mut out.polygon_data);
-            out.polygon_data = draw_polygon(data, poly, out.max_gap, proj, bounds, centroid);
+            out.polygon_data = draw_polygon(data, poly, out.max_gap, proj, bounds, centroid, track_centroid, clip);
         }
-        Value::MultiPolygon(ref polys) => {
+        Geometry::MultiPolygon(polys) => {
             let gap = out.max_gap;
             out.polygon_data = polys
                 .iter()
                 .fold(std::mem::take(&mut out.polygon_data), |d, poly| {
-                    draw_polygon(d, poly, gap, proj, bounds, centroid)
+                    draw_polygon(d, poly, gap, proj, bounds, centroid, track_centroid, clip)
                 });
         }
-        Value::GeometryCollection(ref geoms) => {
+        Geometry::GeometryCollection(geoms) => {
             for geom in geoms {
-                render_geometry(out, &geom.value, proj, bounds, centroid);
+                render_geometry(out, geom, proj, bounds, centroid, track_centroid, clip);
             }
         }
     }
 }
 
+/// Emit a closed sub-path from already-projected points, updating accumulators.
+fn emit_ring(
+    d: &mut String,
+    pts: &[(f64, f64)],
+    bounds: &mut BoundsAccumulator,
+    centroid: &mut Centroid,
+    track_centroid: bool,
+) {
+    let mut started = false;
+    for &(x, y) in pts {
+        if !x.is_finite() || !y.is_finite() {
+            continue;
+        }
+        bounds.add(x, y);
+        if track_centroid {
+            centroid.add(x, y);
+        }
+        push_coord(d, if started { 'L' } else { 'M' }, x, y);
+        started = true;
+    }
+    if started {
+        d.push('Z');
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn draw_polygon(
     data: String,
-    coords: &[Vec<Vec<f64>>],
+    coords: &[Vec<Pos>],
     max_gap: f64,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
+    track_centroid: bool,
+    clip: Option<&Clip>,
 ) -> String {
+    // Clipping (globe limb or antimeridian): clip each ring and emit the re-stitched
+    // projected ring(s) directly, bypassing the gap/NaN heuristics.
+    if let Some(clip) = clip {
+        let mut d = data;
+        match clip {
+            Clip::Circle(circle) => {
+                let mut pts: Vec<(f64, f64)> = Vec::new();
+                for ring in coords {
+                    pts.clear();
+                    if clip_polygon_ring(ring, circle, proj, &mut pts) {
+                        emit_ring(&mut d, &pts, bounds, centroid, track_centroid);
+                    }
+                }
+            }
+            Clip::Antimeridian { central_meridian } => {
+                // The whole polygon (exterior + holes) is clipped together.
+                let mut rings: Vec<Vec<(f64, f64)>> = Vec::new();
+                clip_antimeridian_polygon(coords, *central_meridian, proj, &mut rings);
+                for r in &rings {
+                    emit_ring(&mut d, r, bounds, centroid, track_centroid);
+                }
+            }
+        }
+        return d;
+    }
+
     let mut pb = PathBuilder::new(data, max_gap);
     for ring in coords {
         for p in ring {
-            if p.len() >= 2 {
-                let (x, y) = project_and_track(p[0], p[1], proj, bounds, centroid);
-                pb.add(x, y);
-            }
+            plot_vertex(&mut pb, *p, proj, bounds, centroid, track_centroid);
         }
         pb.close_if_continuous();
     }
@@ -278,18 +352,16 @@ pub fn draw_polygon(
 
 pub fn draw_line(
     data: String,
-    coords: &[Vec<f64>],
+    coords: &[Pos],
     max_gap: f64,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
+    track_centroid: bool,
 ) -> String {
     let mut pb = PathBuilder::new(data, max_gap);
     for p in coords {
-        if p.len() >= 2 {
-            let (x, y) = project_and_track(p[0], p[1], proj, bounds, centroid);
-            pb.add(x, y);
-        }
+        plot_vertex(&mut pb, *p, proj, bounds, centroid, track_centroid);
     }
     pb.finish()
 }

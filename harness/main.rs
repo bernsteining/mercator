@@ -304,7 +304,8 @@ fn run_bench(wasm_bytes: &[u8], geojson: &[u8], config: Option<&[u8]>, iters: us
         let (mut store, _instance, geo_func) = setup(wasm_bytes, fuel);
 
         let mut times = Vec::with_capacity(iters);
-        let mut fuel_used = 0u64;
+        let mut fuel_first = 0u64; // iter 0: parse + render (cache miss)
+        let mut fuel_last = 0u64; // last iter: render only (cache warm)
 
         for i in 0..iters {
             if fuel {
@@ -316,8 +317,12 @@ fn run_bench(wasm_bytes: &[u8], geojson: &[u8], config: Option<&[u8]>, iters: us
             let result = call_geo(&mut store, &geo_func, geojson, cfg);
             let elapsed = start.elapsed();
 
-            if fuel && i == 0 {
-                fuel_used = fuel_before - store.get_fuel().unwrap();
+            if fuel {
+                let used = fuel_before - store.get_fuel().unwrap();
+                if i == 0 {
+                    fuel_first = used;
+                }
+                fuel_last = used;
             }
 
             if let Err(err) = result {
@@ -334,10 +339,14 @@ fn run_bench(wasm_bytes: &[u8], geojson: &[u8], config: Option<&[u8]>, iters: us
         let avg = times.iter().sum::<f64>() / times.len() as f64;
         let min = times.iter().cloned().fold(f64::INFINITY, f64::min);
         total_time += avg;
-        total_fuel += fuel_used;
+        total_fuel += fuel_first;
 
         if fuel {
-            eprintln!("{:<30} {:>10.3} {:>10.3} {:>14}", name, avg, min, fuel_used);
+            let parse = fuel_first.saturating_sub(fuel_last);
+            eprintln!(
+                "{:<24} {:>9.1} parse+render={:>13} render={:>13} parse≈{:>12}",
+                name, min, fuel_first, fuel_last, parse
+            );
         } else {
             eprintln!("{:<30} {:>10.3} {:>10.3} {:>14}", name, avg, min, "-");
         }

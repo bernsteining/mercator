@@ -70,6 +70,23 @@ pub fn build_labels(
                 });
             }
         }
+        LabelConfig::Single(line) => {
+            if let Some(text) = interpolate_template(&line.text, properties) {
+                labels.push(LabelInstance {
+                    x: cx,
+                    y: cy,
+                    text,
+                    font_size: line.font_size.unwrap_or(default_font_size),
+                    color: line.color.as_deref().unwrap_or(default_color).to_string(),
+                    font_family: line
+                        .font_family
+                        .as_deref()
+                        .unwrap_or(default_font_family)
+                        .to_string(),
+                    anchor,
+                });
+            }
+        }
         LabelConfig::Multi(lines) => {
             let total_lines = lines.len();
             for (i, line) in lines.iter().enumerate() {

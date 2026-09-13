@@ -16,4 +16,8 @@ impl Projection for Cassini {
     fn antimeridian_gap(&self) -> f64 {
         2.0
     }
+
+    fn antimeridian_center(&self) -> Option<f64> {
+        Some(self.central_meridian)
+    }
 }
