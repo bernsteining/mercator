@@ -81,12 +81,12 @@
   .extras[hidden] { display: none; }
 
   /* generated Typst */
-  .section.code { flex: 0 0 auto; height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .section.code { flex: 0 0 auto; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
   .bar { display: flex; align-items: center; gap: .5rem; padding: .35rem .7rem .35rem 1rem; background: color-mix(in srgb, var(--code-bg) 60%, var(--panel)); border-bottom: 1px solid var(--line); }
   .bar .cap { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
   .bar .mini { margin-left: auto; font: inherit; font-size: 11px; font-weight: 500; border: 1px solid var(--line); background: var(--panel); color: var(--muted); padding: 2px 9px; border-radius: 6px; cursor: pointer; }
   .bar .mini:hover { color: var(--accent); border-color: var(--accent); }
-  #code { flex: 1; overflow: auto; padding: .5rem 0; background: var(--code-bg); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; scrollbar-width: thin; }
+  #code { max-height: 40vh; overflow: auto; padding: .5rem 0; background: var(--code-bg); font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; scrollbar-width: thin; }
   .cline { display: flex; }
   .gutter { flex: 0 0 auto; width: 2.4em; text-align: right; padding: 0 11px 0 4px; color: var(--muted); opacity: .5; user-select: none; position: sticky; left: 0; background: var(--code-bg); }
   .src { white-space: pre; padding-right: 14px; }
@@ -95,7 +95,7 @@
   .t-key { color: var(--s-key); } .t-kw { color: var(--s-kw); } .t-punct { color: var(--s-punct); }
   .t-comment { color: var(--muted); font-style: italic; }
 
-  .preview-wrap { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 1.25rem; overflow: auto; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%); }
+  .preview-wrap { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 1.25rem; overflow: hidden; touch-action: none; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%); }
   #preview { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
   #preview svg { max-width: 100%; max-height: 100%; }
   .drophint { position: absolute; inset: 14px; display: none; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 14px; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; }
@@ -146,13 +146,13 @@
         <button id="download" class="primary" disabled>Download SVG</button>
       </div>
 
-      <div class="extras" id="extras" hidden></div>
-      <div id="form"><!-- generated from SCHEMA --></div>
-
       <div class="section code">
         <div class="bar"><span class="cap">preview.typ</span><button id="copy" class="mini">Copy</button></div>
         <div id="code"></div>
       </div>
+
+      <div class="extras" id="extras" hidden></div>
+      <div id="form"><!-- generated from SCHEMA --></div>
     </section>
 
     <section class="pane">

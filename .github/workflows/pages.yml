@@ -80,7 +80,8 @@ jobs:
         run: |
           mkdir -p docs/data
           cp examples/data/world.json examples/data/world_no_antartica.json \
-             examples/data/swedish_regions.json examples/data/cities.geojson docs/data/
+             examples/data/swedish_regions.json examples/data/cities.geojson \
+             examples/data/points.geojson docs/data/
           cp examples/data/logo.png docs/logo.png
           ls -la docs/data docs/logo.png
 

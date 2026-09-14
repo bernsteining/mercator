@@ -61,33 +61,49 @@ function jsonToTypst(v, indent) {
   if (v === null) return "none";
   if (typeof v === "boolean" || typeof v === "number") return String(v);
   if (typeof v === "string") return JSON.stringify(v);
+  // Wrap when the one-line form (accounting for this depth's indent, plus room
+  // for a `key: ` prefix) would run long. Arrays wrap a bit more eagerly than
+  // dicts so a list of colors/coords lands one-per-line.
+  const budget = 74 - indent * 2;
   if (Array.isArray(v)) {
     if (!v.length) return "()";
     const items = v.map((x) => jsonToTypst(x, indent + 1));
     const one = "(" + items.join(", ") + (items.length === 1 ? "," : "") + ")";
-    if (one.length <= 58 && !one.includes("\n")) return one;
+    // Keep short numeric tuples inline (domain, a coordinate, rotate); wrap
+    // color/string lists and anything long onto one element per line.
+    const inlineable = v.every((x) => typeof x === "number") || v.length <= 2;
+    if (inlineable && one.length <= budget - 16 && !one.includes("\n")) return one;
     return "(\n" + items.map((it) => pad1 + it).join(",\n") + ",\n" + pad + ")";
   }
   const keys = Object.keys(v);
   if (!keys.length) return "(:)";
   const entries = keys.map((k) => `${identKey(k)}: ${jsonToTypst(v[k], indent + 1)}`);
   const one = "(" + entries.join(", ") + ")";
-  if (one.length <= 58 && !one.includes("\n")) return one;
+  // Keep only single-entry dicts inline (e.g. `(type: "mercator")`); expand any
+  // dict with two or more entries one-per-line for readability.
+  if (keys.length <= 1 && one.length <= budget && !one.includes("\n")) return one;
   return "(\n" + entries.map((e) => pad1 + e).join(",\n") + ",\n" + pad + ")";
 }
 
 // ───────────────────────────── projections ──────────────────────────────────
 const PROJECTIONS = [
-  "equirectangular", "mercator", "cassini", "robinson", "natural_earth",
-  "winkel_tripel", "hammer", "bonne", "polyconic", "lambert_conformal_conic",
-  "albers_equal_area", "orthographic", "azimuthal_equidistant",
-  "lambert_azimuthal_equal_area", "gnomonic", "wiechel", "peirce_quincuncial",
-  "authagraph",
+  "equirectangular", "mercator", "cassini", "miller", "gall_stereographic",
+  "gall_peters", "robinson", "natural_earth", "winkel_tripel", "hammer",
+  "mollweide", "sinusoidal", "eckert4", "eckert6", "kavrayskiy7", "wagner6",
+  "aitoff", "van_der_grinten", "bonne", "polyconic",
+  "lambert_conformal_conic", "albers_equal_area", "orthographic",
+  "azimuthal_equidistant", "lambert_azimuthal_equal_area", "gnomonic", "wiechel",
+  "peirce_quincuncial", "authagraph",
 ];
 const AZIMUTHAL = new Set(["orthographic", "azimuthal_equidistant", "lambert_azimuthal_equal_area", "gnomonic", "wiechel"]);
-const HAS_CM = new Set(["equirectangular", "mercator", "robinson", "natural_earth", "cassini", "polyconic", "hammer", "winkel_tripel", "bonne", "lambert_conformal_conic", "albers_equal_area"]);
+const HAS_CM = new Set(["equirectangular", "mercator", "robinson", "natural_earth", "cassini", "polyconic", "hammer", "winkel_tripel", "bonne", "lambert_conformal_conic", "albers_equal_area", "mollweide", "sinusoidal", "miller", "aitoff", "eckert4", "gall_stereographic", "gall_peters", "eckert6", "kavrayskiy7", "wagner6", "van_der_grinten"]);
 const CONIC = new Set(["lambert_conformal_conic", "albers_equal_area"]);
-const ANTI_OK = new Set(["equirectangular", "mercator", "cassini"]);
+const ANTI_OK = new Set(["equirectangular", "mercator", "cassini", "miller", "gall_stereographic", "gall_peters"]);
+const SCHEMES = [
+  "blues", "greens", "oranges", "reds", "purples", "greys", "viridis", "magma",
+  "ylgnbu", "ylorrd", "rdbu", "rdylbu", "brbg", "piyg", "spectral",
+  "category10", "tableau10", "set1", "set2", "dark2",
+];
 const hasCenterLon = (t) => AZIMUTHAL.has(t) || t === "peirce_quincuncial";
 
 // ───────────────────────────── config schema ────────────────────────────────
@@ -103,6 +119,9 @@ const SCHEMA = [
     { k: "standard_parallel_2", label: "Std parallel 2", t: "rng", def: 50, min: -80, max: 80, step: 1, when: (s) => CONIC.has(s.proj_type) },
     { k: "latitude_of_origin", label: "Lat of origin", t: "rng", def: 0, min: -80, max: 80, step: 1, when: (s) => CONIC.has(s.proj_type) },
     { k: "standard_parallel", label: "Std parallel", t: "rng", def: 50, min: -80, max: 80, step: 1, when: (s) => s.proj_type === "bonne" },
+    { k: "rot_l", label: "Rotate λ", t: "rng", def: 0, min: -180, max: 180, step: 1, when: (s) => !AZIMUTHAL.has(s.proj_type) },
+    { k: "rot_p", label: "Rotate φ (tilt)", t: "rng", def: 0, min: -90, max: 90, step: 1, when: (s) => !AZIMUTHAL.has(s.proj_type) },
+    { k: "rot_g", label: "Rotate γ (roll)", t: "rng", def: 0, min: -180, max: 180, step: 1, when: (s) => !AZIMUTHAL.has(s.proj_type) },
   ] },
   { title: "Style", fields: [
     { k: "fill_mode", label: "Fill", t: "sel", def: "color", opts: [["color", "solid color"], ["none", "none"]] },
@@ -113,7 +132,9 @@ const SCHEMA = [
     { k: "stroke_width", label: "Stroke width", t: "rng", def: 0.05, min: 0, max: 0.3, step: 0.002, when: (s) => s.stroke_mode === "color" },
     { k: "point_mode", label: "Points", t: "sel", def: "auto", opts: [["auto", "auto (= fill)"], ["none", "hidden"], ["custom", "custom color"]] },
     { k: "point_color", label: "Point color", t: "color", def: "#cc0033", when: (s) => s.point_mode === "custom" },
+    { k: "point_shape", label: "Point shape", t: "sel", def: "circle", opts: [["circle", "circle"], ["square", "square"], ["diamond", "diamond"], ["triangle", "triangle"], ["cross", "cross"], ["star", "star"]], when: (s) => s.point_mode !== "none" },
     { k: "point_radius", label: "Point radius (0 = auto)", t: "rng", def: 0, min: 0, max: 2, step: 0.05 },
+    { k: "precision", label: "Resample (0 = off)", t: "rng", def: 0, min: 0, max: 0.05, step: 0.002 },
   ] },
   { title: "Graticule", fields: [
     { k: "grat_on", label: "Enabled", t: "bool", def: false },
@@ -130,6 +151,18 @@ const SCHEMA = [
   ] },
   { title: "Antimeridian clip", when: (s) => ANTI_OK.has(s.proj_type), fields: [
     { k: "anti_on", label: "Enabled", t: "bool", def: false },
+  ] },
+  { title: "Choropleth (fill_scale)", fields: [
+    { k: "fs_on", label: "Enabled", t: "bool", def: false },
+    { k: "fs_property", label: "Property", t: "text", def: "", when: (s) => s.fs_on },
+    { k: "fs_type", label: "Scale", t: "sel", def: "quantize", when: (s) => s.fs_on,
+      opts: [["quantize", "quantize"], ["quantile", "quantile"], ["linear", "linear"], ["diverging", "diverging"], ["category", "category"]] },
+    { k: "fs_scheme", label: "Scheme", t: "sel", def: "blues", opts: SCHEMES.map((s) => [s, s]), when: (s) => s.fs_on },
+    { k: "fs_n", label: "Classes", t: "rng", def: 5, min: 3, max: 9, step: 1, when: (s) => s.fs_on && (s.fs_type === "quantize" || s.fs_type === "quantile") },
+    { k: "legend_on", label: "Legend", t: "bool", def: false, when: (s) => s.fs_on },
+    { k: "legend_title", label: "Legend title", t: "text", def: "", when: (s) => s.fs_on && s.legend_on },
+    { k: "legend_pos", label: "Legend position", t: "sel", def: "bottom-left", when: (s) => s.fs_on && s.legend_on,
+      opts: [["top-left", "top-left"], ["top-right", "top-right"], ["bottom-left", "bottom-left"], ["bottom-right", "bottom-right"]] },
   ] },
   { title: "Tissot's indicatrix", fields: [
     { k: "tissot_on", label: "Enabled", t: "bool", def: false },
@@ -159,6 +192,9 @@ function buildConfig() {
   if (CONIC.has(t)) { proj.standard_parallel_1 = state.standard_parallel_1; proj.standard_parallel_2 = state.standard_parallel_2; if (state.latitude_of_origin) proj.latitude_of_origin = state.latitude_of_origin; }
   if (t === "bonne") proj.standard_parallel = state.standard_parallel;
   cfg.projection = proj;
+  if (!AZIMUTHAL.has(t) && (state.rot_l || state.rot_p || state.rot_g)) {
+    cfg.rotate = [state.rot_l, state.rot_p, state.rot_g];
+  }
 
   if (state.fill_mode === "none") cfg.fill = "none";
   else if (changed("fill")) cfg.fill = state.fill;
@@ -170,12 +206,27 @@ function buildConfig() {
   }
   if (state.point_mode === "none") cfg.point_color = "none";
   else if (state.point_mode === "custom") cfg.point_color = state.point_color;
+  if (state.point_mode !== "none" && state.point_shape !== "circle") cfg.point_shape = state.point_shape;
   if (state.point_radius > 0) cfg.point_radius = state.point_radius;
+  if (state.precision > 0) cfg.precision = state.precision;
 
   if (state.grat_on) cfg.graticule = { step: state.grat_step, color: state.grat_color, opacity: state.grat_opacity, width: state.grat_width };
   if (AZIMUTHAL.has(t) && state.sphere_on) cfg.sphere = { fill: state.sphere_fill, stroke: state.sphere_stroke, stroke_width: state.sphere_stroke_width };
   if (ANTI_OK.has(t) && state.anti_on) cfg.antimeridian = true;
   if (state.tissot_on) cfg.tissot = { step: state.tissot_step, radius: state.tissot_radius, fill: state.tissot_fill, fill_opacity: state.tissot_fill_opacity };
+
+  if (state.fs_on && state.fs_property) {
+    const fs = { property: state.fs_property, type: state.fs_type, scheme: state.fs_scheme };
+    if (state.fs_type === "quantize" || state.fs_type === "quantile") fs.n = state.fs_n;
+    cfg.fill_scale = fs;
+    if (state.legend_on) {
+      cfg.legend = { pos: state.legend_pos };
+      if (state.legend_title) cfg.legend.title = state.legend_title;
+    }
+  }
+
+  // Interactive zoom writes an explicit viewbox so the code reproduces the view.
+  if (view) cfg.viewbox = view.map((n) => Math.round(n * 1000) / 1000);
 
   return { ...cfg, ..._extras };
 }
@@ -192,7 +243,7 @@ function toHex(c) {
 }
 
 // Load a preset config object into `state` (+ `_extras` for what we don't model).
-const KNOWN = new Set(["projection", "fill", "fill_opacity", "stroke", "stroke_width", "point_color", "point_radius", "graticule", "sphere", "antimeridian", "tissot"]);
+const KNOWN = new Set(["projection", "rotate", "precision", "fill", "fill_opacity", "stroke", "stroke_width", "point_color", "point_shape", "point_radius", "graticule", "sphere", "antimeridian", "tissot", "fill_scale", "legend"]);
 function loadStateFromConfig(cfg) {
   for (const f of Object.values(FIELDS)) state[f.k] = f.def; // reset to defaults
   _extras = {};
@@ -205,6 +256,7 @@ function loadStateFromConfig(cfg) {
   if (p.standard_parallel_2 != null) state.standard_parallel_2 = p.standard_parallel_2;
   if (p.latitude_of_origin != null) state.latitude_of_origin = p.latitude_of_origin;
   if (p.standard_parallel != null) state.standard_parallel = p.standard_parallel;
+  if (Array.isArray(cfg.rotate)) { state.rot_l = cfg.rotate[0] || 0; state.rot_p = cfg.rotate[1] || 0; state.rot_g = cfg.rotate[2] || 0; }
   if (cfg.fill === "none") state.fill_mode = "none";
   else if (cfg.fill != null) { state.fill_mode = "color"; state.fill = toHex(cfg.fill); }
   if (cfg.fill_opacity != null) state.fill_opacity = cfg.fill_opacity;
@@ -213,11 +265,22 @@ function loadStateFromConfig(cfg) {
   if (cfg.stroke_width != null) state.stroke_width = cfg.stroke_width;
   if (cfg.point_color === "none") state.point_mode = "none";
   else if (cfg.point_color != null) { state.point_mode = "custom"; state.point_color = toHex(cfg.point_color); }
+  if (cfg.point_shape != null) state.point_shape = cfg.point_shape;
   if (cfg.point_radius != null) state.point_radius = cfg.point_radius;
+  if (cfg.precision != null) state.precision = cfg.precision;
   if (cfg.graticule) { state.grat_on = true; const g = cfg.graticule; if (g.step != null) state.grat_step = g.step; if (g.color != null) state.grat_color = toHex(g.color); if (g.opacity != null) state.grat_opacity = g.opacity; if (g.width != null) state.grat_width = g.width; }
   if (cfg.sphere) { state.sphere_on = true; const s = cfg.sphere; if (s.fill != null) state.sphere_fill = toHex(s.fill); if (s.stroke != null) state.sphere_stroke = toHex(s.stroke); if (s.stroke_width != null) state.sphere_stroke_width = s.stroke_width; }
   if (cfg.antimeridian) state.anti_on = true;
   if (cfg.tissot) { state.tissot_on = true; const ti = cfg.tissot; if (ti.step != null) state.tissot_step = ti.step; if (ti.radius != null) state.tissot_radius = ti.radius; if (ti.fill != null) state.tissot_fill = toHex(ti.fill); if (ti.fill_opacity != null) state.tissot_fill_opacity = ti.fill_opacity; }
+  if (cfg.fill_scale) {
+    const fs = cfg.fill_scale;
+    state.fs_on = true;
+    if (fs.property != null) state.fs_property = fs.property;
+    if (fs.type != null) state.fs_type = fs.type;
+    if (fs.scheme != null) state.fs_scheme = fs.scheme;
+    if (fs.n != null) state.fs_n = fs.n;
+  }
+  if (cfg.legend) { state.legend_on = true; if (cfg.legend.title != null) state.legend_title = cfg.legend.title; if (cfg.legend.pos != null) state.legend_pos = cfg.legend.pos; }
   for (const k of Object.keys(cfg)) if (!KNOWN.has(k)) _extras[k] = cfg[k];
 }
 
@@ -234,7 +297,7 @@ const setters = {}; // field key → fn(value) that reflects state into the cont
 
 function buildForm() {
   for (const sec of SCHEMA) {
-    const d = document.createElement("details"); d.className = "sec"; d.open = true;
+    const d = document.createElement("details"); d.className = "sec"; d.open = false;
     const sum = document.createElement("summary"); sum.textContent = sec.title; d.append(sum);
     const body = document.createElement("div"); body.className = "body"; d.append(body);
     for (const f of sec.fields) {
@@ -262,7 +325,7 @@ function makeControl(f, ctl) {
     const sel = document.createElement("select");
     for (const [v, label] of f.opts) { const o = document.createElement("option"); o.value = v; o.textContent = label; sel.append(o); }
     sel.value = state[f.k];
-    sel.onchange = () => { state[f.k] = sel.value; onChange(); };
+    sel.onchange = () => { state[f.k] = sel.value; if (f.k === "proj_type") resetZoom(); onChange(); };
     ctl.append(sel);
     setters[f.k] = (v) => (sel.value = v);
   } else if (f.t === "color") {
@@ -270,6 +333,11 @@ function makeControl(f, ctl) {
     c.oninput = () => { state[f.k] = c.value; renderTypst(); doRender(); };
     ctl.append(c);
     setters[f.k] = (v) => (c.value = toHex(v));
+  } else if (f.t === "text") {
+    const t = document.createElement("input"); t.type = "text"; t.value = state[f.k];
+    t.oninput = () => { state[f.k] = t.value; renderTypst(); scheduleRender(); };
+    ctl.append(t);
+    setters[f.k] = (v) => (t.value = v);
   } else if (f.t === "rng") {
     const r = document.createElement("input"); r.type = "range"; r.min = f.min; r.max = f.max; r.step = f.step; r.value = state[f.k];
     const n = document.createElement("input"); n.type = "number"; n.step = f.step; n.value = state[f.k];
@@ -300,8 +368,16 @@ let _renderSeq = 0, _debounce = null, _rendering = false, _renderAgain = false;
 
 function renderTypst() {
   const cfg = buildConfig();
-  const dict = Object.keys(cfg).length ? jsonToTypst(cfg, 0) : null;
-  const call = dict ? `#render-map(data, ${dict}, width: 100%)` : `#render-map(data, width: 100%)`;
+  const keys = Object.keys(cfg);
+  let call;
+  if (!keys.length) {
+    call = `#render-map(data, width: 100%)`;
+  } else {
+    // Always expand the top-level config one entry per line (idiomatic, like the
+    // docs); nested short dicts stay inline via jsonToTypst.
+    const entries = keys.map((k) => `  ${identKey(k)}: ${jsonToTypst(cfg[k], 1)}`);
+    call = `#render-map(data, (\n${entries.join(",\n")},\n), width: 100%)`;
+  }
   const src = [
     `#import "@preview/mercator:${VERSION}": *`, ``,
     `#let data = read("${_currentFile.split("/").pop()}", encoding: none)`, ``, call,
@@ -341,8 +417,11 @@ const PRESETS = {
   "World — Robinson + graticule": { file: "data/world.json", config: { projection: { type: "robinson" }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.03, graticule: { step: 30, color: "#bbbbbb", opacity: 0.5, width: 0.3 } } },
   "World — antimeridian clip": { file: "data/world.json", config: { projection: { type: "equirectangular" }, antimeridian: true, fill: "#6fbf5f", stroke: "#356b2c", stroke_width: 0.04 } },
   "World — Tissot's indicatrix": { file: "data/world.json", config: { projection: { type: "mercator" }, fill: "none", stroke: "#aaaaaa", stroke_width: 0.01, graticule: { step: 30, color: "#dddddd", opacity: 0.4, width: 0.2 }, tissot: { step: 30, radius: 5, fill: "#ff0000", fill_opacity: 0.4 } } },
-  "Sweden — choropleth + legend": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "quantize", range: ["#fee5d9", "#fcae91", "#fb6a4a", "#de2d26", "#a50f15"] }, legend: { title: "color", pos: "bottom-left" }, stroke: "white", stroke_width: 0.02, point_color: "none" } },
-  "Cities — proportional symbols": { file: "data/cities.geojson", config: { projection: { type: "mercator" }, point_radius_scale: { property: "pop", max_radius: 1.2 }, point_color: "crimson", fill_opacity: 0.6, stroke: "white", stroke_width: 0.06, label: "{name}", label_font_size: 0.5 } },
+  "Sweden — choropleth + legend": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "quantize", scheme: "reds", n: 5 }, legend: { title: "color", pos: "bottom-left" }, stroke: "white", stroke_width: 0.02, point_color: "none" } },
+  "Sweden — Dorling cartogram": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "quantize", scheme: "reds", n: 5 }, dorling: { property: "l_id", max_radius: 1.0, stroke: "white", stroke_width: 0.02 } } },
+  "Points — hexbin density": { file: "data/points.geojson", config: { projection: { type: "mercator", central_meridian: 15 }, hexbin: { radius: 0.2, scheme: "ylorrd", n: 6, stroke: "white", stroke_width: 0.004 } } },
+  "Points — density contours": { file: "data/points.geojson", config: { projection: { type: "mercator", central_meridian: 15 }, contour: { bandwidth: 6, n: 7, scheme: "viridis", stroke_width: 0.02 } } },
+  "Cities — proportional symbols": { file: "data/cities.geojson", config: { projection: { type: "mercator" }, point_radius_scale: { property: "pop", max_radius: 1.2, min_radius: 0.1 }, point_color: "crimson", fill_opacity: 0.6, stroke: "white", stroke_width: 0.06, size_legend: { title: "population", pos: "bottom-right" }, label: "{name}", label_font_size: 0.5 } },
 };
 
 async function loadPreset(name) {
@@ -355,6 +434,7 @@ async function loadPreset(name) {
   loadStateFromConfig(preset.config);
   syncFormFromState();
   refreshExtras();
+  resetZoom();
   renderTypst();
   doRender();
 }
@@ -369,34 +449,123 @@ function loadFileText(name, text) {
   doRender();
 }
 
-// ───────────────────────── drag-to-rotate the globe ─────────────────────────
+// ─────────────── orbit (1-finger drag) + pinch / wheel zoom ──────────────────
+// Orbit re-renders the map (changes the projection center). Zoom sets an explicit
+// projected `viewbox` (the same config a Typst document uses to frame a region),
+// so the code reflects the view and it's reproducible. The live SVG viewBox is
+// nudged instantly for feedback, then re-rendered so legend/graticule follow.
 const elMain = $("main");
 const elStage = document.querySelector(".preview-wrap");
-let _drag = null;
-function updateDragCursor() { elStage.style.cursor = AZIMUTHAL.has(state.proj_type) ? "grab" : "default"; }
+const pointers = new Map();
+let orbit = null, pinch = null;
+let view = null; // explicit projected viewbox [x, y, w, h], or null = auto-fit
+
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const svgEl = () => elOut.querySelector("svg");
+
+const svgViewBox = () => {
+  const s = svgEl(), vb = s && s.getAttribute("viewBox");
+  return vb ? vb.split(/\s+/).map(Number) : null;
+};
+function resetZoom() { view = null; }
+function applyLiveView() {
+  const s = svgEl();
+  if (s && view) s.setAttribute("viewBox", view.map((n) => +n.toFixed(4)).join(" "));
+}
+function updateDragCursor() {
+  elStage.style.cursor = AZIMUTHAL.has(state.proj_type) ? "grab" : (view ? "move" : "default");
+}
+// Screen point → current view coordinates (letterbox-aware, meet fit).
+function pxToView(cx, cy) {
+  const s = svgEl(), v = view || svgViewBox();
+  if (!s || !v) return null;
+  const r = s.getBoundingClientRect();
+  const sc = Math.min(r.width / v[2], r.height / v[3]);
+  const ox = (r.width - v[2] * sc) / 2, oy = (r.height - v[3] * sc) / 2;
+  return [v[0] + (cx - r.left - ox) / sc, v[1] + (cy - r.top - oy) / sc];
+}
+// After the gesture settles, re-render so the wasm bakes the viewbox (and moves
+// the legend/graticule) and the code stays in sync.
+let _zoomTimer = null;
+function commitZoom() {
+  clearTimeout(_zoomTimer);
+  _zoomTimer = setTimeout(() => { renderTypst(); doRender(); }, 180);
+}
+// Zoom about screen point (cx,cy) by `factor` (>1 = in), optionally panning first.
+function adjustView(cx, cy, factor, dxPx, dyPx) {
+  if (!view) view = svgViewBox();
+  if (!view) return;
+  const s = svgEl(), r = s.getBoundingClientRect();
+  const sc0 = Math.min(r.width / view[2], r.height / view[3]);
+  if (dxPx || dyPx) view = [view[0] - dxPx / sc0, view[1] - dyPx / sc0, view[2], view[3]];
+  if (factor && factor !== 1) {
+    const a = pxToView(cx, cy);
+    const v = view, nw = v[2] / factor, nh = v[3] / factor;
+    const fx = (a[0] - v[0]) / v[2], fy = (a[1] - v[1]) / v[3];
+    view = [a[0] - fx * nw, a[1] - fy * nh, nw, nh];
+  }
+  applyLiveView();  // instant feedback (vector-crisp)
+  renderTypst();    // code reflects the new viewbox
+  commitZoom();     // re-render after settle so legend/graticule follow
+}
+
 elStage.addEventListener("pointerdown", (e) => {
-  if (!AZIMUTHAL.has(state.proj_type)) return;
-  _drag = { x: e.clientX, y: e.clientY, lon: state.center_lon, lat: state.center_lat };
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   elStage.setPointerCapture(e.pointerId);
-  elStage.style.cursor = "grabbing";
+  if (pointers.size === 2) {
+    orbit = null; // second finger down → switch from orbit to pinch
+    const [a, b] = [...pointers.values()];
+    pinch = { d: dist(a, b), m: mid(a, b) };
+  } else if (pointers.size === 1 && AZIMUTHAL.has(state.proj_type)) {
+    orbit = { x: e.clientX, y: e.clientY, lon: state.center_lon, lat: state.center_lat };
+    elStage.style.cursor = "grabbing";
+  }
   e.preventDefault();
 });
 elStage.addEventListener("pointermove", (e) => {
-  if (!_drag) return;
-  const sens = 0.35; // deg/px
-  // Grab-and-turn feel: dragging right/down brings western/southern land into view.
-  const lon = ((_drag.lon - (e.clientX - _drag.x) * sens + 180) % 360 + 360) % 360 - 180;
-  const lat = Math.max(-90, Math.min(90, _drag.lat + (e.clientY - _drag.y) * sens));
-  state.center_lon = Math.round(lon * 10) / 10;
-  state.center_lat = Math.round(lat * 10) / 10;
-  setters.center_lon(state.center_lon);
-  setters.center_lat(state.center_lat);
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const d = dist(a, b), m = mid(a, b);
+    const factor = pinch.d > 0 ? d / pinch.d : 1;
+    adjustView(m.x, m.y, factor, m.x - pinch.m.x, m.y - pinch.m.y);
+    pinch = { d, m };
+  } else if (orbit && pointers.size === 1) {
+    const sens = 0.35; // deg/px — drag right/down brings western/southern land into view
+    const lon = ((orbit.lon - (e.clientX - orbit.x) * sens + 180) % 360 + 360) % 360 - 180;
+    const lat = Math.max(-90, Math.min(90, orbit.lat + (e.clientY - orbit.y) * sens));
+    state.center_lon = Math.round(lon * 10) / 10;
+    state.center_lat = Math.round(lat * 10) / 10;
+    setters.center_lon(state.center_lon);
+    setters.center_lat(state.center_lat);
+    renderTypst();
+    doRender();
+  }
+});
+function liftPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 0) { orbit = null; updateDragCursor(); }
+}
+elStage.addEventListener("pointerup", liftPointer);
+elStage.addEventListener("pointercancel", liftPointer);
+
+// Wheel / trackpad zoom, focused on the cursor.
+elStage.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  adjustView(e.clientX, e.clientY, e.deltaY < 0 ? 1.15 : 1 / 1.15, 0, 0);
+  updateDragCursor();
+}, { passive: false });
+
+// Double-click / double-tap resets the zoom to the auto-fit viewbox.
+elStage.addEventListener("dblclick", () => {
+  resetZoom();
   renderTypst();
   doRender();
+  updateDragCursor();
 });
-const endDrag = () => { if (_drag) { _drag = null; updateDragCursor(); } };
-elStage.addEventListener("pointerup", endDrag);
-elStage.addEventListener("pointercancel", endDrag);
 
 // ───────────────────────── file drop + picker ───────────────────────────────
 ["dragenter", "dragover"].forEach((ev) => elMain.addEventListener(ev, (e) => { e.preventDefault(); elMain.classList.add("dragging"); }));
