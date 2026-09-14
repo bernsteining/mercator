@@ -31,6 +31,14 @@ pub fn write_label(out: &mut String, label: &LabelInstance) {
     out.push_str(&label.font_family);
     out.push_str(r#"" fill=""#);
     out.push_str(&label.color);
+    if let Some((color, width)) = &label.halo {
+        // paint-order:stroke draws the halo behind the glyph fill.
+        out.push_str(r#"" stroke=""#);
+        out.push_str(color);
+        out.push_str(r#"" stroke-width=""#);
+        push_f64(out, *width);
+        out.push_str(r#"" paint-order="stroke" stroke-linejoin="round"#);
+    }
     out.push_str(r#"" text-anchor=""#);
     out.push_str(label.anchor);
     out.push_str(r#"" dominant-baseline="middle">"#);
@@ -55,6 +63,10 @@ pub fn build_labels(
     let default_color = config.label_color.as_deref().unwrap_or("black");
     let default_font_family = config.label_font_family.as_deref().unwrap_or("Arial");
     let anchor = if is_point { "start" } else { "middle" };
+    let halo = config
+        .label_halo
+        .as_deref()
+        .map(|c| (c.to_string(), config.label_halo_width.unwrap_or(default_font_size * 0.12)));
 
     match label_config {
         LabelConfig::Simple(template) => {
@@ -67,6 +79,7 @@ pub fn build_labels(
                     color: default_color.to_string(),
                     font_family: default_font_family.to_string(),
                     anchor,
+                    halo: halo.clone(),
                 });
             }
         }
@@ -84,6 +97,7 @@ pub fn build_labels(
                         .unwrap_or(default_font_family)
                         .to_string(),
                     anchor,
+                    halo: halo.clone(),
                 });
             }
         }
@@ -109,6 +123,7 @@ pub fn build_labels(
                             .unwrap_or(default_font_family)
                             .to_string(),
                         anchor,
+                        halo: halo.clone(),
                     });
                 }
             }

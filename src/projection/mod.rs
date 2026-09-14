@@ -5,9 +5,14 @@ pub(crate) mod azimuthal;
 mod azimuthal_equidistant;
 mod bonne;
 mod cassini;
+mod eckert4;
+mod eckert6;
 mod elliptic;
 mod equirectangular;
+mod gall_peters;
+mod gall_stereographic;
 mod gnomonic;
+mod kavrayskiy7;
 mod hammer;
 mod lambert;
 mod lambert_azimuthal;
@@ -20,6 +25,8 @@ mod peirce;
 mod polyconic;
 mod robinson;
 mod sinusoidal;
+mod van_der_grinten;
+mod wagner6;
 mod wiechel;
 mod winkel_tripel;
 
@@ -180,10 +187,38 @@ pub enum ProjectionConfig {
         #[serde(default)]
         central_meridian: f64,
     },
+    Eckert4 {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    GallStereographic {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    GallPeters {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Kavrayskiy7 {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Wagner6 {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    Eckert6 {
+        #[serde(default)]
+        central_meridian: f64,
+    },
+    VanDerGrinten {
+        #[serde(default)]
+        central_meridian: f64,
+    },
     Authagraph,
 }
 
-pub(crate) enum Proj {
+enum ProjKind {
     Equirectangular(equirectangular::Equirectangular),
     Mercator(mercator::Mercator),
     LambertConformalConic(lambert::Compiled),
@@ -205,78 +240,196 @@ pub(crate) enum Proj {
     Miller(miller::Miller),
     Mollweide(mollweide::Mollweide),
     Aitoff(aitoff::Aitoff),
+    Eckert4(eckert4::Eckert4),
+    GallStereographic(gall_stereographic::GallStereographic),
+    GallPeters(gall_peters::GallPeters),
+    Kavrayskiy7(kavrayskiy7::Kavrayskiy7),
+    Wagner6(wagner6::Wagner6),
+    Eckert6(eckert6::Eckert6),
+    VanDerGrinten(van_der_grinten::VanDerGrinten),
     Authagraph(authagraph::Compiled),
 }
 
 macro_rules! dispatch {
     ($self:expr, $method:ident $(, $arg:expr)*) => {
         match $self {
-            Proj::Equirectangular(p) => p.$method($($arg),*),
-            Proj::Mercator(p) => p.$method($($arg),*),
-            Proj::LambertConformalConic(p) => p.$method($($arg),*),
-            Proj::AlbersEqualArea(p) => p.$method($($arg),*),
-            Proj::Robinson(p) => p.$method($($arg),*),
-            Proj::Orthographic(p) => p.$method($($arg),*),
-            Proj::NaturalEarth(p) => p.$method($($arg),*),
-            Proj::LambertAzimuthal(p) => p.$method($($arg),*),
-            Proj::Gnomonic(p) => p.$method($($arg),*),
-            Proj::Wiechel(p) => p.$method($($arg),*),
-            Proj::PeirceQuincuncial(p) => p.$method($($arg),*),
-            Proj::Cassini(p) => p.$method($($arg),*),
-            Proj::Bonne(p) => p.$method($($arg),*),
-            Proj::Polyconic(p) => p.$method($($arg),*),
-            Proj::AzimuthalEquidistant(p) => p.$method($($arg),*),
-            Proj::Hammer(p) => p.$method($($arg),*),
-            Proj::WinkelTripel(p) => p.$method($($arg),*),
-            Proj::Sinusoidal(p) => p.$method($($arg),*),
-            Proj::Miller(p) => p.$method($($arg),*),
-            Proj::Mollweide(p) => p.$method($($arg),*),
-            Proj::Aitoff(p) => p.$method($($arg),*),
-            Proj::Authagraph(p) => p.$method($($arg),*),
+            ProjKind::Equirectangular(p) => p.$method($($arg),*),
+            ProjKind::Mercator(p) => p.$method($($arg),*),
+            ProjKind::LambertConformalConic(p) => p.$method($($arg),*),
+            ProjKind::AlbersEqualArea(p) => p.$method($($arg),*),
+            ProjKind::Robinson(p) => p.$method($($arg),*),
+            ProjKind::Orthographic(p) => p.$method($($arg),*),
+            ProjKind::NaturalEarth(p) => p.$method($($arg),*),
+            ProjKind::LambertAzimuthal(p) => p.$method($($arg),*),
+            ProjKind::Gnomonic(p) => p.$method($($arg),*),
+            ProjKind::Wiechel(p) => p.$method($($arg),*),
+            ProjKind::PeirceQuincuncial(p) => p.$method($($arg),*),
+            ProjKind::Cassini(p) => p.$method($($arg),*),
+            ProjKind::Bonne(p) => p.$method($($arg),*),
+            ProjKind::Polyconic(p) => p.$method($($arg),*),
+            ProjKind::AzimuthalEquidistant(p) => p.$method($($arg),*),
+            ProjKind::Hammer(p) => p.$method($($arg),*),
+            ProjKind::WinkelTripel(p) => p.$method($($arg),*),
+            ProjKind::Sinusoidal(p) => p.$method($($arg),*),
+            ProjKind::Miller(p) => p.$method($($arg),*),
+            ProjKind::Mollweide(p) => p.$method($($arg),*),
+            ProjKind::Aitoff(p) => p.$method($($arg),*),
+            ProjKind::Eckert4(p) => p.$method($($arg),*),
+            ProjKind::GallStereographic(p) => p.$method($($arg),*),
+            ProjKind::GallPeters(p) => p.$method($($arg),*),
+            ProjKind::Kavrayskiy7(p) => p.$method($($arg),*),
+            ProjKind::Wagner6(p) => p.$method($($arg),*),
+            ProjKind::Eckert6(p) => p.$method($($arg),*),
+            ProjKind::VanDerGrinten(p) => p.$method($($arg),*),
+            ProjKind::Authagraph(p) => p.$method($($arg),*),
         }
     };
+}
+
+impl ProjKind {
+    #[inline]
+    fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
+        dispatch!(self, project, lon, lat)
+    }
+
+    #[inline]
+    fn antimeridian_gap(&self) -> f64 {
+        dispatch!(self, antimeridian_gap)
+    }
+
+    #[inline]
+    fn clip_center(&self) -> Option<[f64; 3]> {
+        dispatch!(self, clip_center)
+    }
+
+    #[inline]
+    fn antimeridian_center(&self) -> Option<f64> {
+        dispatch!(self, antimeridian_center)
+    }
+}
+
+/// A spherical pre-rotation `[lambda, phi, gamma]` (degrees), applied to input
+/// coordinates before projecting — a faithful port of d3.geoRotation. Lets any
+/// projection be recentered/tilted/rolled to an oblique aspect.
+struct Rotate {
+    delta_lambda: f64,
+    cos_dp: f64,
+    sin_dp: f64,
+    cos_dg: f64,
+    sin_dg: f64,
+    phi_gamma: bool,
+}
+
+impl Rotate {
+    fn new(r: [f64; 3]) -> Rotate {
+        let dp = r[1].to_radians();
+        let dg = r[2].to_radians();
+        Rotate {
+            delta_lambda: r[0].to_radians(),
+            cos_dp: dp.cos(),
+            sin_dp: dp.sin(),
+            cos_dg: dg.cos(),
+            sin_dg: dg.sin(),
+            phi_gamma: r[1] != 0.0 || r[2] != 0.0,
+        }
+    }
+
+    /// Rotate a lon/lat (degrees) → lon/lat (degrees).
+    #[inline]
+    fn apply(&self, lon: f64, lat: f64) -> (f64, f64) {
+        use std::f64::consts::{PI, TAU};
+        let mut lambda = lon.to_radians() + self.delta_lambda;
+        if lambda > PI {
+            lambda -= TAU;
+        } else if lambda < -PI {
+            lambda += TAU;
+        }
+        let phi = lat.to_radians();
+        if !self.phi_gamma {
+            return (lambda.to_degrees(), phi.to_degrees());
+        }
+        let cos_phi = phi.cos();
+        let x = lambda.cos() * cos_phi;
+        let y = lambda.sin() * cos_phi;
+        let z = phi.sin();
+        let k = z * self.cos_dp + x * self.sin_dp;
+        let out_lambda = (y * self.cos_dg - k * self.sin_dg).atan2(x * self.cos_dp - z * self.sin_dp);
+        let out_phi = (k * self.cos_dg + y * self.sin_dg).clamp(-1.0, 1.0).asin();
+        (out_lambda.to_degrees(), out_phi.to_degrees())
+    }
+}
+
+/// A projection plus an optional spherical pre-rotation.
+pub(crate) struct Proj {
+    kind: ProjKind,
+    rot: Option<Rotate>,
 }
 
 impl Proj {
     #[inline]
     pub fn project(&self, lon: f64, lat: f64) -> (f64, f64) {
-        dispatch!(self, project, lon, lat)
+        match &self.rot {
+            Some(r) => {
+                let (l, p) = r.apply(lon, lat);
+                self.kind.project(l, p)
+            }
+            None => self.kind.project(lon, lat),
+        }
     }
 
     #[inline]
     pub fn antimeridian_gap(&self) -> f64 {
-        dispatch!(self, antimeridian_gap)
+        self.kind.antimeridian_gap()
     }
 
     #[inline]
     pub fn clip_center(&self) -> Option<[f64; 3]> {
-        dispatch!(self, clip_center)
+        self.kind.clip_center()
     }
 
     #[inline]
     pub fn antimeridian_center(&self) -> Option<f64> {
-        dispatch!(self, antimeridian_center)
+        // A pre-rotation moves the ±180° seam, so the (unrotated) antimeridian
+        // clip no longer applies; disable it when rotated.
+        if self.rot.is_some() {
+            None
+        } else {
+            self.kind.antimeridian_center()
+        }
     }
 }
 
-pub fn from_config(config: Option<ProjectionConfig>) -> Proj {
+/// Build a projection from config, with an optional `rotate: [lambda, phi, gamma]`
+/// (degrees). Rotation is applied to azimuthal projections' input too, but those
+/// already self-center via `center_lat`/`center_lon` and use a limb clip that
+/// assumes unrotated input — so rotation is only attached when the projection has
+/// no limb clip (i.e. non-azimuthal families).
+pub fn from_config(config: Option<ProjectionConfig>, rotate: Option<[f64; 3]>) -> Proj {
+    let kind = build_kind(config);
+    let rot = rotate
+        .filter(|r| *r != [0.0, 0.0, 0.0] && kind.clip_center().is_none())
+        .map(Rotate::new);
+    Proj { kind, rot }
+}
+
+fn build_kind(config: Option<ProjectionConfig>) -> ProjKind {
     match config {
-        None => Proj::Equirectangular(equirectangular::Equirectangular {
+        None => ProjKind::Equirectangular(equirectangular::Equirectangular {
             central_meridian: 0.0,
         }),
         Some(c) => match c {
             ProjectionConfig::Equirectangular { central_meridian } => {
-                Proj::Equirectangular(equirectangular::Equirectangular { central_meridian })
+                ProjKind::Equirectangular(equirectangular::Equirectangular { central_meridian })
             }
             ProjectionConfig::Mercator { central_meridian } => {
-                Proj::Mercator(mercator::Mercator { central_meridian })
+                ProjKind::Mercator(mercator::Mercator { central_meridian })
             }
             ProjectionConfig::LambertConformalConic {
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
-            } => Proj::LambertConformalConic(lambert::compile(
+            } => ProjKind::LambertConformalConic(lambert::compile(
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
@@ -287,80 +440,101 @@ pub fn from_config(config: Option<ProjectionConfig>) -> Proj {
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
-            } => Proj::AlbersEqualArea(albers::compile(
+            } => ProjKind::AlbersEqualArea(albers::compile(
                 standard_parallel_1,
                 standard_parallel_2,
                 central_meridian,
                 latitude_of_origin,
             )),
             ProjectionConfig::Robinson { central_meridian } => {
-                Proj::Robinson(robinson::Robinson { central_meridian })
+                ProjKind::Robinson(robinson::Robinson { central_meridian })
             }
             ProjectionConfig::Orthographic {
                 center_lat,
                 center_lon,
-            } => Proj::Orthographic(orthographic::Orthographic(azimuthal::compile(
+            } => ProjKind::Orthographic(orthographic::Orthographic(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::NaturalEarth { central_meridian } => {
-                Proj::NaturalEarth(natural_earth::NaturalEarth { central_meridian })
+                ProjKind::NaturalEarth(natural_earth::NaturalEarth { central_meridian })
             }
             ProjectionConfig::LambertAzimuthalEqualArea {
                 center_lat,
                 center_lon,
-            } => Proj::LambertAzimuthal(lambert_azimuthal::LambertAzimuthal(azimuthal::compile(
+            } => ProjKind::LambertAzimuthal(lambert_azimuthal::LambertAzimuthal(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::Gnomonic {
                 center_lat,
                 center_lon,
-            } => Proj::Gnomonic(gnomonic::Gnomonic(azimuthal::compile(
+            } => ProjKind::Gnomonic(gnomonic::Gnomonic(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::Wiechel {
                 center_lat,
                 center_lon,
-            } => Proj::Wiechel(wiechel::Wiechel(azimuthal::compile(
+            } => ProjKind::Wiechel(wiechel::Wiechel(azimuthal::compile(
                 center_lat, center_lon,
             ))),
             ProjectionConfig::PeirceQuincuncial { center_lon } => {
-                Proj::PeirceQuincuncial(peirce::compile(center_lon))
+                ProjKind::PeirceQuincuncial(peirce::compile(center_lon))
             }
             ProjectionConfig::Cassini { central_meridian } => {
-                Proj::Cassini(cassini::Cassini { central_meridian })
+                ProjKind::Cassini(cassini::Cassini { central_meridian })
             }
             ProjectionConfig::Bonne {
                 central_meridian,
                 standard_parallel,
-            } => Proj::Bonne(bonne::Bonne::new(central_meridian, standard_parallel)),
+            } => ProjKind::Bonne(bonne::Bonne::new(central_meridian, standard_parallel)),
             ProjectionConfig::Polyconic { central_meridian } => {
-                Proj::Polyconic(polyconic::Polyconic { central_meridian })
+                ProjKind::Polyconic(polyconic::Polyconic { central_meridian })
             }
             ProjectionConfig::AzimuthalEquidistant {
                 center_lat,
                 center_lon,
-            } => Proj::AzimuthalEquidistant(azimuthal_equidistant::AzimuthalEquidistant(
+            } => ProjKind::AzimuthalEquidistant(azimuthal_equidistant::AzimuthalEquidistant(
                 azimuthal::compile(center_lat, center_lon),
             )),
             ProjectionConfig::Hammer { central_meridian } => {
-                Proj::Hammer(hammer::Hammer { central_meridian })
+                ProjKind::Hammer(hammer::Hammer { central_meridian })
             }
             ProjectionConfig::WinkelTripel { central_meridian } => {
-                Proj::WinkelTripel(winkel_tripel::WinkelTripel::new(central_meridian))
+                ProjKind::WinkelTripel(winkel_tripel::WinkelTripel::new(central_meridian))
             }
             ProjectionConfig::Sinusoidal { central_meridian } => {
-                Proj::Sinusoidal(sinusoidal::Sinusoidal { central_meridian })
+                ProjKind::Sinusoidal(sinusoidal::Sinusoidal { central_meridian })
             }
             ProjectionConfig::Miller { central_meridian } => {
-                Proj::Miller(miller::Miller { central_meridian })
+                ProjKind::Miller(miller::Miller { central_meridian })
             }
             ProjectionConfig::Mollweide { central_meridian } => {
-                Proj::Mollweide(mollweide::Mollweide { central_meridian })
+                ProjKind::Mollweide(mollweide::Mollweide { central_meridian })
             }
             ProjectionConfig::Aitoff { central_meridian } => {
-                Proj::Aitoff(aitoff::Aitoff { central_meridian })
+                ProjKind::Aitoff(aitoff::Aitoff { central_meridian })
             }
-            ProjectionConfig::Authagraph => Proj::Authagraph(authagraph::compile()),
+            ProjectionConfig::Eckert4 { central_meridian } => {
+                ProjKind::Eckert4(eckert4::Eckert4 { central_meridian })
+            }
+            ProjectionConfig::GallStereographic { central_meridian } => {
+                ProjKind::GallStereographic(gall_stereographic::GallStereographic { central_meridian })
+            }
+            ProjectionConfig::GallPeters { central_meridian } => {
+                ProjKind::GallPeters(gall_peters::GallPeters { central_meridian })
+            }
+            ProjectionConfig::Kavrayskiy7 { central_meridian } => {
+                ProjKind::Kavrayskiy7(kavrayskiy7::Kavrayskiy7 { central_meridian })
+            }
+            ProjectionConfig::Wagner6 { central_meridian } => {
+                ProjKind::Wagner6(wagner6::Wagner6 { central_meridian })
+            }
+            ProjectionConfig::Eckert6 { central_meridian } => {
+                ProjKind::Eckert6(eckert6::Eckert6 { central_meridian })
+            }
+            ProjectionConfig::VanDerGrinten { central_meridian } => {
+                ProjKind::VanDerGrinten(van_der_grinten::VanDerGrinten { central_meridian })
+            }
+            ProjectionConfig::Authagraph => ProjKind::Authagraph(authagraph::compile()),
         },
     }
 }

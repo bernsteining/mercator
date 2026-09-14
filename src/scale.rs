@@ -103,12 +103,16 @@ impl SizeScale {
     }
 
     /// Radius for a feature's properties. Missing/non-numeric → the minimum radius.
-    /// `sqrt` scaling interpolates in √value space so symbol *area* tracks the value.
     pub fn radius_for(&self, props: &Map<String, Value>) -> f64 {
-        let v = match props.get(&self.property).and_then(Value::as_f64) {
-            Some(v) => v,
-            None => return self.min_r,
-        };
+        match props.get(&self.property).and_then(Value::as_f64) {
+            Some(v) => self.radius_for_value(v),
+            None => self.min_r,
+        }
+    }
+
+    /// Radius for a raw numeric value. `sqrt` scaling interpolates in √value
+    /// space so symbol *area* tracks the value (the perceptual default).
+    fn radius_for_value(&self, v: f64) -> f64 {
         let t = if self.sqrt {
             let s = |x: f64| x.max(0.0).sqrt();
             let (a, b) = (s(self.min_v), s(self.max_v));
@@ -123,6 +127,17 @@ impl SizeScale {
             0.0
         };
         self.min_r + (self.max_r - self.min_r) * t
+    }
+
+    /// The outer radius, and representative (value, radius) samples for a size key.
+    pub fn max_radius(&self) -> f64 {
+        self.max_r
+    }
+    pub fn legend_samples(&self) -> Vec<(f64, f64)> {
+        [self.max_v, (self.min_v + self.max_v) / 2.0, self.min_v]
+            .iter()
+            .map(|&v| (v, self.radius_for_value(v)))
+            .collect()
     }
 }
 
@@ -214,6 +229,11 @@ fn sample_gradient(stops: &[[f64; 3]], n: usize) -> Vec<String> {
 /// Parse a scheme name into its anchor stops as RGB triples.
 fn scheme_as_stops(name: &str) -> Option<Vec<[f64; 3]>> {
     scheme_stops(name).map(|s| s.iter().filter_map(|c| parse_hex(c)).collect())
+}
+
+/// `n` discrete colors sampled from a named scheme (for e.g. hexbin counts).
+pub fn scheme_colors(name: &str, n: usize) -> Option<Vec<String>> {
+    scheme_as_stops(name).map(|stops| sample_gradient(&stops, n.max(1)))
 }
 
 /// Stringify a property value into a category key (string, number, or bool).
@@ -479,6 +499,21 @@ impl ColorScale {
         }
     }
 
+    /// `(min, max)` for continuous scales (linear/diverging), else `None`.
+    fn continuous_domain(&self) -> Option<(f64, f64)> {
+        match &self.kind {
+            Kind::Linear { min, max, .. } | Kind::Diverging { min, max, .. } => Some((*min, *max)),
+            _ => None,
+        }
+    }
+
+    /// The color at a numeric value (used to sample the gradient bar).
+    fn color_at(&self, value: f64) -> String {
+        let mut m = Map::new();
+        m.insert(self.property.clone(), Value::from(value));
+        self.color_for(&m)
+    }
+
     /// Discrete (color, "lo–hi") swatches describing the scale, for the legend.
     fn swatches(&self) -> Vec<(String, String)> {
         match &self.kind {
@@ -545,6 +580,12 @@ pub fn render_legend(
     cfg: &LegendConfig,
     viewbox: (f64, f64, f64, f64),
 ) {
+    // Continuous scales get a smooth gradient bar instead of discrete swatches.
+    if let Some((min, max)) = scale.continuous_domain() {
+        render_gradient_legend(svg, scale, cfg, viewbox, min, max);
+        return;
+    }
+
     let (vx, vy, vw, vh) = viewbox;
     let items = scale.swatches();
     if items.is_empty() {
@@ -608,6 +649,168 @@ pub fn render_legend(
         push_escaped(svg, label);
         svg.push_str("</text>");
         y += row;
+    }
+}
+
+/// Continuous gradient bar legend for linear/diverging scales, with min/mid/max
+/// tick labels. Drawn with an SVG `linearGradient` sampled from the scale.
+fn render_gradient_legend(
+    svg: &mut String,
+    scale: &ColorScale,
+    cfg: &LegendConfig,
+    viewbox: (f64, f64, f64, f64),
+    min: f64,
+    max: f64,
+) {
+    let (vx, vy, vw, vh) = viewbox;
+    let unit = vw.min(vh);
+    let bar_w = unit * 0.03;
+    let bar_h = unit * 0.30;
+    let font = unit * 0.028;
+    let pad = unit * 0.02;
+    let gap = font * 0.5;
+    let title_h = if cfg.title.is_some() { font * 1.5 } else { 0.0 };
+    let block_w = bar_w + gap + font * 4.0;
+    let block_h = title_h + bar_h;
+
+    let right = cfg.pos.contains("right");
+    let bottom = cfg.pos.contains("bottom");
+    let x0 = if right { vx + vw - pad - block_w } else { vx + pad };
+    let y0 = if bottom { vy + vh - pad - block_h } else { vy + pad };
+
+    let mut y = y0;
+    if let Some(title) = &cfg.title {
+        svg.push_str(r#"<text x=""#);
+        push_f64(svg, x0);
+        svg.push_str(r#"" y=""#);
+        push_f64(svg, y + font);
+        svg.push_str(r#"" font-size=""#);
+        push_f64(svg, font * 1.1);
+        svg.push_str(r#"" font-family="Arial" font-weight="bold" fill="black">"#);
+        push_escaped(svg, title);
+        svg.push_str("</text>");
+        y += title_h;
+    }
+
+    // Gradient definition: offset 0 (bottom) = min, offset 1 (top) = max.
+    svg.push_str(r#"<defs><linearGradient id="mgrad" x1="0" y1="1" x2="0" y2="0">"#);
+    let n = 12;
+    for i in 0..=n {
+        let t = i as f64 / n as f64;
+        svg.push_str(r#"<stop offset=""#);
+        push_f64(svg, t);
+        svg.push_str(r#"" stop-color=""#);
+        push_escaped(svg, &scale.color_at(min + (max - min) * t));
+        svg.push_str(r#""/>"#);
+    }
+    svg.push_str("</linearGradient></defs>");
+
+    svg.push_str(r#"<rect x=""#);
+    push_f64(svg, x0);
+    svg.push_str(r#"" y=""#);
+    push_f64(svg, y);
+    svg.push_str(r#"" width=""#);
+    push_f64(svg, bar_w);
+    svg.push_str(r#"" height=""#);
+    push_f64(svg, bar_h);
+    svg.push_str(r##"" fill="url(#mgrad)" stroke="#333" stroke-width=""##);
+    push_f64(svg, bar_w * 0.04);
+    svg.push_str(r#""/>"#);
+
+    // Tick labels: max (top), midpoint, min (bottom).
+    for (frac, val) in [(0.0, max), (0.5, (min + max) / 2.0), (1.0, min)] {
+        svg.push_str(r#"<text x=""#);
+        push_f64(svg, x0 + bar_w + gap);
+        svg.push_str(r#"" y=""#);
+        push_f64(svg, y + bar_h * frac + font * 0.35);
+        svg.push_str(r#"" font-size=""#);
+        push_f64(svg, font);
+        svg.push_str(r#"" font-family="Arial" fill="black">"#);
+        push_escaped(svg, &fmt_num(val));
+        svg.push_str("</text>");
+    }
+}
+
+/// Nested-circle size key for a proportional-symbol map (`point_radius_scale`).
+/// Circles share a bottom tangent (largest behind), each with a value label.
+pub fn render_size_legend(
+    svg: &mut String,
+    size: &SizeScale,
+    cfg: &LegendConfig,
+    viewbox: (f64, f64, f64, f64),
+) {
+    let rmax = size.max_radius();
+    let samples = size.legend_samples();
+    if rmax <= 0.0 || samples.is_empty() {
+        return;
+    }
+    let (vx, vy, vw, vh) = viewbox;
+    let unit = vw.min(vh);
+    let font = unit * 0.028;
+    let pad = unit * 0.02;
+    let gap = font * 0.5;
+    let title_h = if cfg.title.is_some() { font * 1.5 } else { 0.0 };
+    let block_w = 2.0 * rmax + gap + font * 4.0;
+    let block_h = title_h + 2.0 * rmax;
+
+    let right = cfg.pos.contains("right");
+    let bottom = cfg.pos.contains("bottom");
+    let x0 = if right { vx + vw - pad - block_w } else { vx + pad };
+    let y0 = if bottom { vy + vh - pad - block_h } else { vy + pad };
+
+    let mut y = y0;
+    if let Some(title) = &cfg.title {
+        svg.push_str(r#"<text x=""#);
+        push_f64(svg, x0);
+        svg.push_str(r#"" y=""#);
+        push_f64(svg, y + font);
+        svg.push_str(r#"" font-size=""#);
+        push_f64(svg, font * 1.1);
+        svg.push_str(r#"" font-family="Arial" font-weight="bold" fill="black">"#);
+        push_escaped(svg, title);
+        svg.push_str("</text>");
+        y += title_h;
+    }
+
+    let baseline = y + 2.0 * rmax;
+    let cx = x0 + rmax;
+    let sw = (rmax * 0.03).max(unit * 0.001);
+    for (val, r) in &samples {
+        if *r <= 0.0 {
+            continue;
+        }
+        svg.push_str(r#"<circle cx=""#);
+        push_f64(svg, cx);
+        svg.push_str(r#"" cy=""#);
+        push_f64(svg, baseline - r);
+        svg.push_str(r#"" r=""#);
+        push_f64(svg, *r);
+        svg.push_str(r##"" fill="none" stroke="#555" stroke-width=""##);
+        push_f64(svg, sw);
+        svg.push_str(r#""/>"#);
+
+        let ty = baseline - 2.0 * r;
+        svg.push_str(r##"<line stroke="#aaa" stroke-width=""##);
+        push_f64(svg, sw);
+        svg.push_str(r#"" x1=""#);
+        push_f64(svg, cx);
+        svg.push_str(r#"" y1=""#);
+        push_f64(svg, ty);
+        svg.push_str(r#"" x2=""#);
+        push_f64(svg, x0 + 2.0 * rmax + gap * 0.6);
+        svg.push_str(r#"" y2=""#);
+        push_f64(svg, ty);
+        svg.push_str(r#""/>"#);
+
+        svg.push_str(r#"<text x=""#);
+        push_f64(svg, x0 + 2.0 * rmax + gap);
+        svg.push_str(r#"" y=""#);
+        push_f64(svg, ty + font * 0.35);
+        svg.push_str(r#"" font-size=""#);
+        push_f64(svg, font);
+        svg.push_str(r#"" font-family="Arial" fill="black">"#);
+        push_escaped(svg, &fmt_num(*val));
+        svg.push_str("</text>");
     }
 }
 

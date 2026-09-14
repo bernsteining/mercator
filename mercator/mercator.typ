@@ -33,6 +33,39 @@
   (type: "Feature", properties: properties, geometry: (type: "Polygon", coordinates: (coords,)))
 }
 
+/// Builds a GeoJSON LineString following the great-circle (shortest) path between
+/// two points — the building block of a flow / connection map. Interpolates on the
+/// sphere (slerp), so the arc curves correctly under any projection.
+///
+/// - from (array): `(lon, lat)` start, in degrees.
+/// - to (array): `(lon, lat)` end, in degrees.
+/// - steps (int): number of segments along the arc (default 48).
+/// - properties (dictionary): properties attached to the feature (default empty).
+/// -> dictionary
+#let geo-arc(from, to, steps: 48, properties: (:)) = {
+  let d2r = calc.pi / 180
+  let a = (calc.cos(from.at(1) * d2r) * calc.cos(from.at(0) * d2r),
+           calc.cos(from.at(1) * d2r) * calc.sin(from.at(0) * d2r),
+           calc.sin(from.at(1) * d2r))
+  let b = (calc.cos(to.at(1) * d2r) * calc.cos(to.at(0) * d2r),
+           calc.cos(to.at(1) * d2r) * calc.sin(to.at(0) * d2r),
+           calc.sin(to.at(1) * d2r))
+  let dot = calc.max(-1, calc.min(1, a.at(0) * b.at(0) + a.at(1) * b.at(1) + a.at(2) * b.at(2)))
+  let d = calc.acos(dot).rad()
+  let coords = ()
+  for i in range(steps + 1) {
+    let t = i / steps
+    let (f1, f2) = if d < 1e-6 { (1 - t, t) } else {
+      (calc.sin((1 - t) * d) / calc.sin(d), calc.sin(t * d) / calc.sin(d))
+    }
+    let x = f1 * a.at(0) + f2 * b.at(0)
+    let y = f1 * a.at(1) + f2 * b.at(1)
+    let z = f1 * a.at(2) + f2 * b.at(2)
+    coords.push((calc.atan2(x, y).rad() / d2r, calc.atan2(calc.sqrt(x * x + y * y), z).rad() / d2r))
+  }
+  (type: "Feature", properties: properties, geometry: (type: "LineString", coordinates: coords))
+}
+
 /// Renders a GeoJSON and returns SVG code for it.
 ///
 /// - code (string, bytes): GeoJSON to be rendered.
@@ -107,6 +140,17 @@
 #let map-bounds(code, projection: (:)) = {
   let out = mercator.bounds(bytes(code), bytes(json.encode((projection: projection))))
   json(out)
+}
+
+/// Projected centroid of each feature, as an array of `(x, y)` (or `none`), in
+/// the same coordinate space as the rendered SVG / `viewbox`. Handy for placing
+/// custom markers or labels at feature centers.
+///
+/// - code (string, bytes): the GeoJSON.
+/// - projection (dictionary): the projection to measure under.
+/// -> array
+#let map-centroids(code, projection: (:)) = {
+  json(mercator.centroids(bytes(code), bytes(json.encode((projection: projection)))))
 }
 
 /// Renders several GeoJSON layers onto one shared projection and viewbox, so a

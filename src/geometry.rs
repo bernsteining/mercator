@@ -161,6 +161,9 @@ pub struct RenderOutput {
     pub points: Vec<(f64, f64)>,
     /// Maximum x-gap between consecutive vertices before treating as antimeridian crossing.
     pub max_gap: f64,
+    /// Adaptive-resampling tolerance in projected units (0 = off). When > 0, long
+    /// segments are subdivided so the projected path follows the projection's curve.
+    pub precision: f64,
 }
 
 impl Default for RenderOutput {
@@ -170,6 +173,7 @@ impl Default for RenderOutput {
             line_data: String::new(),
             points: Vec::new(),
             max_gap: f64::INFINITY,
+            precision: 0.0,
         }
     }
 }
@@ -228,6 +232,84 @@ fn plot_vertex(
     }
 }
 
+/// Emit an already-projected point (finite → append; non-finite → break sub-path).
+#[inline]
+fn emit_projected(pb: &mut PathBuilder, bounds: &mut BoundsAccumulator, centroid: &mut Centroid, track_centroid: bool, x: f64, y: f64) {
+    if x.is_finite() && y.is_finite() {
+        bounds.add(x, y);
+        if track_centroid {
+            centroid.add(x, y);
+        }
+        pb.push_point(x, y);
+    } else {
+        pb.break_subpath();
+    }
+}
+
+const RESAMPLE_MAX_DEPTH: u8 = 16;
+
+/// Adaptive resampling of one geographic segment `a→b`: if the projected midpoint
+/// deviates from the chord midpoint by more than `√prec2`, recurse; else emit `b`.
+/// `a` is assumed already emitted; emits every point after it up to and including `b`.
+#[allow(clippy::too_many_arguments)]
+fn resample_segment(
+    pb: &mut PathBuilder,
+    bounds: &mut BoundsAccumulator,
+    centroid: &mut Centroid,
+    track_centroid: bool,
+    proj: &Proj,
+    prec2: f64,
+    a: Pos,
+    b: Pos,
+    pa: (f64, f64),
+    pbp: (f64, f64),
+    depth: u8,
+) {
+    if depth < RESAMPLE_MAX_DEPTH && pa.0.is_finite() && pa.1.is_finite() && pbp.0.is_finite() && pbp.1.is_finite() {
+        // GeoJSON segments are straight in lon/lat, so subdivide there and project.
+        let m = Pos { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+        let pm = proj.project(m.x, m.y);
+        if pm.0.is_finite() && pm.1.is_finite() {
+            let dx = pm.0 - (pa.0 + pbp.0) * 0.5;
+            let dy = pm.1 - (pa.1 + pbp.1) * 0.5;
+            if dx * dx + dy * dy > prec2 {
+                resample_segment(pb, bounds, centroid, track_centroid, proj, prec2, a, m, pa, pm, depth + 1);
+                resample_segment(pb, bounds, centroid, track_centroid, proj, prec2, m, b, pm, pbp, depth + 1);
+                return;
+            }
+        }
+    }
+    emit_projected(pb, bounds, centroid, track_centroid, pbp.0, pbp.1);
+}
+
+/// Plot a ring/line, adaptively resampling when `precision > 0` (else vertex-by-vertex).
+fn plot_path(
+    pb: &mut PathBuilder,
+    coords: &[Pos],
+    proj: &Proj,
+    bounds: &mut BoundsAccumulator,
+    centroid: &mut Centroid,
+    track_centroid: bool,
+    precision: f64,
+) {
+    if precision <= 0.0 {
+        for p in coords {
+            plot_vertex(pb, *p, proj, bounds, centroid, track_centroid);
+        }
+        return;
+    }
+    let prec2 = precision * precision;
+    let mut prev: Option<(Pos, (f64, f64))> = None;
+    for &p in coords {
+        let pp = proj.project(p.x, p.y);
+        match prev {
+            None => emit_projected(pb, bounds, centroid, track_centroid, pp.0, pp.1),
+            Some((a, pa)) => resample_segment(pb, bounds, centroid, track_centroid, proj, prec2, a, p, pa, pp, 0),
+        }
+        prev = Some((p, pp));
+    }
+}
+
 pub fn render_geometry(
     out: &mut RenderOutput,
     value: &Geometry,
@@ -250,24 +332,24 @@ pub fn render_geometry(
         }
         Geometry::LineString(coords) => {
             let data = std::mem::take(&mut out.line_data);
-            out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid, track_centroid);
+            out.line_data = draw_line(data, coords, out.max_gap, out.precision, proj, bounds, centroid, track_centroid);
         }
         Geometry::MultiLineString(lines) => {
             for coords in lines {
                 let data = std::mem::take(&mut out.line_data);
-                out.line_data = draw_line(data, coords, out.max_gap, proj, bounds, centroid, track_centroid);
+                out.line_data = draw_line(data, coords, out.max_gap, out.precision, proj, bounds, centroid, track_centroid);
             }
         }
         Geometry::Polygon(poly) => {
             let data = std::mem::take(&mut out.polygon_data);
-            out.polygon_data = draw_polygon(data, poly, out.max_gap, proj, bounds, centroid, track_centroid, clip);
+            out.polygon_data = draw_polygon(data, poly, out.max_gap, out.precision, proj, bounds, centroid, track_centroid, clip);
         }
         Geometry::MultiPolygon(polys) => {
-            let gap = out.max_gap;
+            let (gap, prec) = (out.max_gap, out.precision);
             out.polygon_data = polys
                 .iter()
                 .fold(std::mem::take(&mut out.polygon_data), |d, poly| {
-                    draw_polygon(d, poly, gap, proj, bounds, centroid, track_centroid, clip)
+                    draw_polygon(d, poly, gap, prec, proj, bounds, centroid, track_centroid, clip)
                 });
         }
         Geometry::GeometryCollection(geoms) => {
@@ -304,10 +386,12 @@ fn emit_ring(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 pub fn draw_polygon(
     data: String,
     coords: &[Vec<Pos>],
     max_gap: f64,
+    precision: f64,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
@@ -342,9 +426,7 @@ pub fn draw_polygon(
 
     let mut pb = PathBuilder::new(data, max_gap);
     for ring in coords {
-        for p in ring {
-            plot_vertex(&mut pb, *p, proj, bounds, centroid, track_centroid);
-        }
+        plot_path(&mut pb, ring, proj, bounds, centroid, track_centroid, precision);
         pb.close_if_continuous();
     }
     pb.finish()
@@ -354,14 +436,13 @@ pub fn draw_line(
     data: String,
     coords: &[Pos],
     max_gap: f64,
+    precision: f64,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
     centroid: &mut Centroid,
     track_centroid: bool,
 ) -> String {
     let mut pb = PathBuilder::new(data, max_gap);
-    for p in coords {
-        plot_vertex(&mut pb, *p, proj, bounds, centroid, track_centroid);
-    }
+    plot_path(&mut pb, coords, proj, bounds, centroid, track_centroid, precision);
     pb.finish()
 }

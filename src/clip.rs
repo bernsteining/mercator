@@ -100,6 +100,25 @@ impl ClipCircle {
         }
     }
 
+    /// Projected center and radius of the small circle at angular distance
+    /// `angle` (radians) from the center — used for `clip_angle`.
+    pub fn disc_at(&self, proj: &Proj, angle: f64) -> ((f64, f64), f64) {
+        let (clon, clat) = vec_to_ll(self.center);
+        let center = proj.project(clon, clat);
+        let up = if self.center[2].abs() < 0.9 { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
+        let perp = normalize(cross(&self.center, &up));
+        let (ca, sa) = (angle.cos(), angle.sin());
+        let p = normalize([
+            self.center[0] * ca + perp[0] * sa,
+            self.center[1] * ca + perp[1] * sa,
+            self.center[2] * ca + perp[2] * sa,
+        ]);
+        let (lon, lat) = vec_to_ll(p);
+        let (px, py) = proj.project(lon, lat);
+        let r = ((px - center.0).powi(2) + (py - center.1).powi(2)).sqrt();
+        (center, r)
+    }
+
     /// The projected disc center and radius for drawing/bounding the sphere.
     pub fn disc(&self, proj: &Proj) -> ((f64, f64), f64) {
         let (clon, clat) = vec_to_ll(self.center);
