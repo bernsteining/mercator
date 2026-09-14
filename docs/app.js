@@ -300,26 +300,43 @@ const elExtras = $("extras");
 const setStatus = (m) => (elStatus.textContent = m || "");
 const showError = (m) => { elErr.textContent = m; elErr.hidden = !m; };
 
-const rows = [];   // { field, el }  for visibility refresh
+const rows = [];   // { field, el, text }  for visibility refresh + search
 const setters = {}; // field key → fn(value) that reflects state into the control
+const searchSections = []; // { el, rows }  for the settings search
 
 function buildForm() {
   for (const sec of SCHEMA) {
     const d = document.createElement("details"); d.className = "sec"; d.open = false;
     const sum = document.createElement("summary"); sum.textContent = sec.title; d.append(sum);
     const body = document.createElement("div"); body.className = "body"; d.append(body);
+    const secRows = [];
     for (const f of sec.fields) {
       const row = document.createElement("div"); row.className = "row";
       const lab = document.createElement("label"); lab.textContent = f.label; row.append(lab);
       const ctl = document.createElement("div"); ctl.className = "ctl"; row.append(ctl);
       makeControl(f, ctl);
       body.append(row);
-      rows.push({ field: f, el: row });
+      const entry = { field: f, el: row, text: `${sec.title} ${f.label} ${f.k}`.toLowerCase() };
+      rows.push(entry);
+      secRows.push(entry);
     }
     elForm.append(d);
     sec._el = d;
+    searchSections.push({ el: d, rows: secRows });
   }
   refreshVis();
+}
+
+// Filter the form by a query — hides non-matching rows/sections (via a class with
+// !important so it composes with when-visibility) and expands sections with a hit.
+function filterForm(query) {
+  const q = (query || "").trim().toLowerCase();
+  for (const r of rows) r.el.classList.toggle("search-hidden", !!q && !r.text.includes(q));
+  for (const sec of searchSections) {
+    const hit = sec.rows.some((r) => !r.el.classList.contains("search-hidden"));
+    sec.el.classList.toggle("search-hidden", !!q && !hit);
+    sec.el.open = q ? hit : false;
+  }
 }
 function makeControl(f, ctl) {
   const onChange = () => { renderTypst(); doRender(); refreshVis(); };
@@ -604,6 +621,7 @@ $("file").addEventListener("change", async (e) => {
 // ───────────────────────────── misc events ──────────────────────────────────
 for (const name of Object.keys(PRESETS)) { const o = document.createElement("option"); o.value = o.textContent = name; elPreset.append(o); }
 elPreset.addEventListener("change", () => { if (elPreset.value) loadPreset(elPreset.value); });
+$("search").addEventListener("input", (e) => filterForm(e.target.value));
 
 // ───────────────────────── tools: download / reset / share ───────────────────
 function saveBlob(blob, name) {

@@ -56,6 +56,11 @@
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   button:disabled { opacity: .5; cursor: default; }
 
+  /* settings search */
+  .search-row { padding: .5rem 1rem 0; }
+  #search { width: 100%; font: inherit; font-size: 12.5px; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); transition: .12s; }
+  #search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search-hidden { display: none !important; }
   /* generated control form */
   #form { flex: 1; overflow: auto; padding: .4rem 0 1rem; scrollbar-width: thin; }
   .sec { border-bottom: 1px solid var(--line); }
@@ -163,6 +168,7 @@
       </div>
 
       <div class="extras" id="extras" hidden></div>
+      <div class="search-row"><input id="search" type="search" placeholder="Search settings…" autocomplete="off"></div>
       <div id="form"><!-- generated from SCHEMA --></div>
     </section>
 
