@@ -545,6 +545,7 @@ function adjustView(cx, cy, factor, dxPx, dyPx) {
 }
 
 elStage.addEventListener("pointerdown", (e) => {
+  if (e.target.closest("#tools")) return; // let tool buttons/links act normally
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   elStage.setPointerCapture(e.pointerId);
   if (pointers.size === 2) {
