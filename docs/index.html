@@ -29,12 +29,12 @@
     display: flex; flex-direction: column; -webkit-font-smoothing: antialiased;
   }
   header {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding: 0.75rem 1.1rem; border-bottom: 1px solid var(--line); background: var(--panel);
+    display: flex; align-items: center; gap: 0.85rem;
+    padding: 1rem 1.4rem; border-bottom: 1px solid var(--line); background: var(--panel);
   }
-  header h1 { font-size: 1.15rem; font-weight: 700; margin: 0; letter-spacing: -.2px; }
-  header .brand { display: flex; align-items: center; gap: 0.6rem; color: inherit; text-decoration: none; transition: color .12s; }
-  header .brand img { border-radius: 0.55rem; display: block; width: 2.6rem; height: 2.6rem; }
+  header h1 { font-size: 1.4rem; font-weight: 700; margin: 0; letter-spacing: -.2px; }
+  header .brand { display: flex; align-items: center; gap: 0.7rem; color: inherit; text-decoration: none; transition: color .12s; }
+  header .brand img { border-radius: 0.6rem; display: block; width: 3.2rem; height: 3.2rem; }
   header .brand:hover h1 { color: var(--accent); }
   header .badge { font-size: 0.7rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
     color: var(--accent); background: var(--accent-soft); padding: 0.15rem 0.45rem; border-radius: 5px; }
@@ -43,7 +43,7 @@
   header .links a { color: var(--muted); text-decoration: none; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; transition: color .12s; }
   header .links a:hover { color: var(--accent); }
   header .links a.icon { color: var(--ink-soft); }
-  header .links a.icon svg { width: 2.6rem; height: 2.6rem; display: block; }
+  header .links a.icon svg { width: 3rem; height: 3rem; display: block; }
 
   main { flex: 1; display: grid; grid-template-columns: minmax(320px, 4fr) 6fr; gap: 1px; background: var(--line); min-height: 0; }
   .pane { background: var(--bg); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
