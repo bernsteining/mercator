@@ -32,27 +32,39 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `stroke` | string | `"black"` | Stroke color. Supports `{property_name}` interpolation. |
-| `stroke_width` | float | `0.05` | Stroke width |
+| `stroke_width` | float/string | `0.05` | Stroke width. May be a `{property_name}` template for data-driven line weight. |
 | `fill` | string | `"white"` | Fill color. Supports `{property_name}` interpolation. |
-| `fill_opacity` | float | `1.0` | Fill opacity |
+| `fill_opacity` | float/string | `1.0` | Fill opacity. May be a `{property_name}` template. |
 | `fill_pattern` | string | none | `"hatched"`, `"crosshatched"`, or `"dotted"`. Supports `{property_name}`. |
 | `point_radius` | float | `stroke_width * 5` | Radius for Point/MultiPoint geometries |
 | `point_color` | string | same as `fill` | Point fill color. `"none"` hides points. Supports `{property_name}`. |
 | `point_shape` | string | `"circle"` | Marker shape for Point/MultiPoint: `circle`, `square`, `diamond`, `triangle`, `cross`, or `star`. Supports `{property_name}`. |
-| `viewbox` | array | auto | Manual viewbox as `(x, y, width, height)` |
+| `stroke_dash` | string | none | SVG `stroke-dasharray` for line/polygon borders, e.g. `"0.25 0.15"` (map units). Supports `{property_name}`. |
+| `label_halo` | string | none | Halo/outline color drawn behind label text (legibility over busy maps) |
+| `label_halo_width` | float | `0.12 × font size` | Halo width in map units |
+| `label_collide` | bool | `false` | Drop labels whose bounding box overlaps an already-placed label (first wins) |
+| `viewbox` | array | auto | Manual viewbox as `(x, y, width, height)` in projected units — zoom/frame a specific region of the map |
 | `viewbox_padding` | float | `0.15` | Padding fraction around auto-computed viewbox |
 | `label` | string or array | none | Label template: `"{name}"` or array of `{text, font_size, color, font_family}` objects |
 | `label_color` | string | `"black"` | Default label color |
 | `label_font_size` | float | `0.3` | Default label font size |
 | `label_font_family` | string | `"Arial"` | Default label font family |
 | `projection` | object | equirectangular | Projection config (see below) |
+| `rotate` | array | none | Spherical pre-rotation `[lambda, phi, gamma]` in degrees (d3.geoRotation) — recenter/tilt/roll a non-azimuthal projection to an oblique aspect (azimuthal projections use `center_lat`/`center_lon` instead) |
+| `precision` | float | none | Adaptive-resampling tolerance in projected units. When set, straight lon/lat segments are subdivided so they follow the projection's curve (useful for coarse geometry on curved projections). Off when omitted. |
 | `graticule` | object | none | Graticule overlay config (see below) |
 | `tissot` | object | none | Tissot's indicatrix overlay config (see below) |
 | `sphere` | object | none | Filled globe/ocean disc for azimuthal projections (see below); hemisphere clipping is automatic and needs no config |
+| `clip_extent` | array | none | Clip rendered geometry to a projected-space rectangle `(x0, y0, x1, y1)` |
+| `clip_angle` | float | none | Clip an azimuthal map to a small circle of this angular radius (degrees) |
 | `antimeridian` | bool | `false` | Clip polygons at the antimeridian (cylindrical projections) so seam-crossing shapes (e.g. Antarctica) close cleanly instead of streaking (see below) |
+| `hexbin` | object | none | Aggregate Point/MultiPoint features into a hexagonal density grid — `(radius, scheme?, n?, stroke?, stroke_width?)`. Cells are colored by point count. |
+| `dorling` | object | none | Dorling cartogram: replace each feature with a circle sized by a numeric property, placed near its centroid with collision repulsion — `(property, max_radius, min_radius?, domain?, iterations?, stroke?, stroke_width?)`. Circle fill comes from the resolved `fill` (so `fill_scale` colors them). |
+| `contour` | object | none | Density contours of Point/MultiPoint features (KDE + marching squares) — `(cell_size?, bandwidth?, n?, scheme?, stroke_width?)`. Iso-lines colored by level. |
 | `fill_scale` | object | none | Data-driven fill from a numeric property, i.e. a choropleth (see below) |
 | `point_radius_scale` | object | none | Data-driven point size from a numeric property, i.e. proportional symbols (see below) |
-| `legend` | object | none | Legend key for the active `fill_scale` (see below) |
+| `legend` | object | none | Legend key for the active `fill_scale` (discrete swatches, or a gradient bar for `linear`/`diverging`) — `(title?, pos)` |
+| `size_legend` | object | none | Nested-circle size key for the active `point_radius_scale` — `(title?, pos)` |
 
 ### projections
 
@@ -71,7 +83,14 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 | `winkel_tripel` | Pseudo-cylindrical | `central_meridian` |
 | `mollweide` | Pseudo-cylindrical (equal-area) | `central_meridian` |
 | `sinusoidal` | Pseudo-cylindrical (equal-area) | `central_meridian` |
+| `eckert4` | Pseudo-cylindrical (equal-area) | `central_meridian` |
+| `eckert6` | Pseudo-cylindrical (equal-area) | `central_meridian` |
+| `kavrayskiy7` | Pseudo-cylindrical (compromise) | `central_meridian` |
+| `wagner6` | Pseudo-cylindrical (compromise) | `central_meridian` |
+| `van_der_grinten` | Compromise (circular) | `central_meridian` |
 | `miller` | Cylindrical (compromise) | `central_meridian` |
+| `gall_stereographic` | Cylindrical (compromise) | `central_meridian` |
+| `gall_peters` | Cylindrical (equal-area) | `central_meridian` |
 | `aitoff` | Lenticular (compromise) | `central_meridian` |
 | `orthographic` | Azimuthal | `center_lat`, `center_lon` |
 | `gnomonic` | Azimuthal | `center_lat`, `center_lon` |
@@ -104,13 +123,13 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 
 ### sphere
 
-Azimuthal globe projections (currently `orthographic`) **always** clip geometry to the visible hemisphere — polygons are cut at the limb and re-stitched along it, so land closes cleanly against the horizon instead of breaking. This happens automatically, with or without a `sphere` config. The optional `sphere` config only adds a filled ocean disc drawn behind the land.
+A `sphere` config draws an ocean background behind the land, shaped to the projection: a **disc** for azimuthal globes (`orthographic`) or the projection's **frame** (ellipse / lens / rectangle) for non-azimuthal projections (Mollweide, Hammer, Aitoff, Robinson, …). Separately, azimuthal globes **always** clip geometry to the visible hemisphere (land is cut at the limb and re-stitched) — automatically, with or without a `sphere`.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `fill` | string | `"#cfe8ff"` | Disc fill (`"none"` draws no ocean; clipping still applies) |
-| `stroke` | string | none | Disc outline color |
-| `stroke_width` | float | `0.005` | Disc outline width |
+| `fill` | string | `"#cfe8ff"` | Ocean fill (`"none"` draws none) |
+| `stroke` | string | none | Outline color |
+| `stroke_width` | float | `0.005` | Outline width |
 
 ```typ
 #render-map(world, (
@@ -214,6 +233,19 @@ Draws a swatch key for the active `fill_scale` inside a viewbox corner.
 #render-map(json.encode((type: "FeatureCollection", features: (ring,))), (
   fill: "#4488ff", fill_opacity: 0.3, stroke: "#1144aa",
 ))
+```
+
+### flow maps (geo-arc)
+
+`geo-arc(from, to, steps: 48, properties: (:))` builds a GeoJSON LineString following the great-circle (shortest) path between two `(lon, lat)` points — the building block of a flow / connection map. It interpolates on the sphere, so the arc curves correctly under any projection. Combine several into a `FeatureCollection` (typically over a basemap via `render-layers`):
+
+```typ
+#let sthlm = (18.07, 59.33)
+#let arcs = ((-74, 40.7), (139.7, 35.7)).map(d => geo-arc(sthlm, d))
+#render-layers((
+  (data: read("world.json", encoding: none), fill: "#dfe6ee", stroke: "white"),
+  (data: json.encode((type: "FeatureCollection", features: arcs)), fill: "none", stroke: "crimson"),
+), projection: (type: "natural_earth"))
 ```
 
 ```typ
