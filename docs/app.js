@@ -294,7 +294,8 @@ function loadStateFromConfig(cfg) {
 // ───────────────────────────── DOM + form ───────────────────────────────────
 const $ = (id) => document.getElementById(id);
 const elForm = $("form"), elCode = $("code"), elOut = $("preview"), elErr = $("error");
-const elStatus = $("status"), elPreset = $("preset"), elDownload = $("download");
+const elStatus = $("status"), elPreset = $("preset");
+let lastSvg = ""; // the most recent rendered SVG string (for download/PNG)
 const elExtras = $("extras");
 const setStatus = (m) => (elStatus.textContent = m || "");
 const showError = (m) => { elErr.textContent = m; elErr.hidden = !m; };
@@ -407,7 +408,7 @@ async function doRender() {
       if (s) { s.removeAttribute("width"); s.removeAttribute("height"); }
       showError("");
       setStatus(`rendered · ${(svg.length / 1024).toFixed(1)} KB SVG`);
-      elDownload.disabled = false; elDownload.dataset.svg = svg;
+      lastSvg = svg;
       updateDragCursor();
     }
   } catch (e) {
@@ -603,12 +604,56 @@ $("file").addEventListener("change", async (e) => {
 // ───────────────────────────── misc events ──────────────────────────────────
 for (const name of Object.keys(PRESETS)) { const o = document.createElement("option"); o.value = o.textContent = name; elPreset.append(o); }
 elPreset.addEventListener("change", () => { if (elPreset.value) loadPreset(elPreset.value); });
-elDownload.addEventListener("click", () => {
-  const svg = elDownload.dataset.svg; if (!svg) return;
+
+// ───────────────────────── tools: download / reset / share ───────────────────
+function saveBlob(blob, name) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  a.download = "mercator-map.svg"; a.click(); URL.revokeObjectURL(a.href);
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+$("dl-svg").addEventListener("click", () => {
+  if (lastSvg) saveBlob(new Blob([lastSvg], { type: "image/svg+xml" }), "mercator-map.svg");
 });
+$("dl-png").addEventListener("click", () => {
+  if (!lastSvg) return;
+  const s = svgEl();
+  const vb = (s && s.getAttribute("viewBox") || "").split(/\s+/).map(Number);
+  const aspect = vb.length === 4 && vb[3] > 0 ? vb[2] / vb[3] : 1;
+  const W = 1600, H = Math.max(1, Math.round(W / aspect));
+  // The wasm SVG has a viewBox but no width/height; give it an intrinsic size.
+  const sized = lastSvg.replace("<svg ", `<svg width="${W}" height="${H}" `);
+  const url = URL.createObjectURL(new Blob([sized], { type: "image/svg+xml" }));
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.drawImage(img, 0, 0, W, H);
+    URL.revokeObjectURL(url);
+    c.toBlob((b) => b && saveBlob(b, "mercator-map.png"), "image/png");
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); showError("PNG export failed."); };
+  img.src = url;
+});
+$("reset").addEventListener("click", () => {
+  resetZoom();
+  if (elPreset.value) loadPreset(elPreset.value);
+  else doRender();
+  history.replaceState(null, "", location.pathname);
+});
+$("share").addEventListener("click", async () => {
+  const url = await shareUrl();
+  history.replaceState(null, "", url);
+  const btn = $("share"), prev = btn.textContent;
+  try { await navigator.clipboard.writeText(url); btn.textContent = "Copied!"; }
+  catch { btn.textContent = "Link in URL"; }
+  setTimeout(() => (btn.textContent = prev), 1400);
+});
+
 $("copy").addEventListener("click", async () => {
   const src = [...elCode.querySelectorAll(".src")].map((s) => s.textContent).join("\n");
   try { await navigator.clipboard.writeText(src); $("copy").textContent = "Copied"; setTimeout(() => ($("copy").textContent = "Copy"), 1200); }
@@ -631,12 +676,57 @@ $("copy").addEventListener("click", async () => {
   }
 }
 
+// ───────────────────────── shareable links ──────────────────────────────────
+// Encode the data source + config as `?s=<deflate+base64url>` (or `?j=<base64url>`
+// when the browser lacks CompressionStream). Decoded on load.
+const b64u = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const unb64u = (s) => { const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/")); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; };
+const hasZip = typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
+async function deflate(str) { const cs = new CompressionStream("deflate-raw"); const w = cs.writable.getWriter(); w.write(ENC.encode(str)); w.close(); return new Uint8Array(await new Response(cs.readable).arrayBuffer()); }
+async function inflate(bytes) { const ds = new DecompressionStream("deflate-raw"); const w = ds.writable.getWriter(); w.write(bytes); w.close(); return DEC.decode(await new Response(ds.readable).arrayBuffer()); }
+const baseUrl = () => location.origin + location.pathname;
+async function shareUrl() {
+  const json = JSON.stringify({ f: _currentFile, c: buildConfig() });
+  if (hasZip) {
+    try { return baseUrl() + "?s=" + b64u(await deflate(json)); } catch { /* fall through */ }
+  }
+  return baseUrl() + "?j=" + b64u(new TextEncoder().encode(json));
+}
+async function decodeUrl() {
+  const p = new URLSearchParams(location.search);
+  try {
+    if (p.get("s")) return JSON.parse(await inflate(unb64u(p.get("s"))));
+    if (p.get("j")) return JSON.parse(new TextDecoder().decode(unb64u(p.get("j"))));
+  } catch { /* malformed link */ }
+  return null;
+}
+
 // ───────────────────────────── boot ─────────────────────────────────────────
 buildForm();
 (async () => {
   setStatus("compiling wasm…");
   try { await wReq({ kind: "ensure" }); }
   catch (e) { showError("Failed to load wasm: " + e.message); return; }
+
+  const shared = await decodeUrl();
+  if (shared && shared.f) {
+    // Restore a shared view: load its data file + config.
+    setStatus("loading shared view…");
+    try {
+      _geojsonText = await (await fetch(shared.f)).text();
+      _currentFile = shared.f;
+      loadStateFromConfig(shared.c || {});
+      syncFormFromState();
+      refreshExtras();
+      resetZoom();
+      if (Array.isArray(shared.c && shared.c.viewbox)) view = shared.c.viewbox.slice();
+      elPreset.value = "";
+      renderTypst();
+      doRender();
+      return;
+    } catch (e) { showError("Could not load shared view: " + e.message); }
+  }
+
   const first = Object.keys(PRESETS)[0];
   elPreset.value = first;
   await loadPreset(first);

@@ -98,6 +98,11 @@
   .preview-wrap { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; padding: 1.25rem; overflow: hidden; touch-action: none; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 70%); }
   #preview { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
   #preview svg { max-width: 100%; max-height: 100%; }
+  #tools { position: absolute; top: .6rem; right: .6rem; display: flex; flex-direction: column; align-items: stretch; gap: .35rem; z-index: 2; }
+  #tools button, #tools a { font: inherit; font-size: .8rem; font-weight: 500; border: 1px solid var(--line); background: var(--panel); color: var(--ink-soft); padding: .28rem .7rem; border-radius: 7px; cursor: pointer; box-shadow: var(--shadow); transition: .12s; text-align: center; text-decoration: none; }
+  #tools button:hover, #tools a:hover { color: var(--accent); border-color: var(--accent); }
+  #tools #find { font-size: .72rem; color: var(--muted); border-style: dashed; }
+  @media (max-width: 860px) { #tools { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; } }
   .drophint { position: absolute; inset: 14px; display: none; align-items: center; justify-content: center; border: 2px dashed var(--accent); border-radius: 14px; color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 8%, transparent); pointer-events: none; }
   main.dragging .drophint { display: flex; }
   .statusbar { display: flex; align-items: center; gap: 1rem; padding: .45rem 1rem; border-top: 1px solid var(--line); background: var(--panel); font-size: .8rem; color: var(--muted); }
@@ -143,7 +148,6 @@
         </div>
         <button id="browse">Load file…</button>
         <input id="file" type="file" accept=".json,.geojson,.topojson" hidden>
-        <button id="download" class="primary" disabled>Download SVG</button>
       </div>
 
       <div class="section code">
@@ -159,6 +163,14 @@
       <div class="preview-wrap">
         <div id="preview"></div>
         <div class="drophint">Drop a GeoJSON / TopoJSON file</div>
+        <div id="tools">
+          <button id="dl-svg" title="Download the map as SVG">SVG</button>
+          <button id="dl-png" title="Download the map as PNG">PNG</button>
+          <button id="reset" title="Reset settings to the preset defaults">Reset</button>
+          <button id="share" title="Copy a shareable link with this configuration">Share</button>
+          <a id="docs" href="https://github.com/bernsteining/mercator/blob/main/examples/documentation.pdf" target="_blank" rel="noopener" title="Open the documentation">Docs</a>
+          <a id="find" href="https://geojson.xyz/" target="_blank" rel="noopener" title="Find free GeoJSON datasets">Find GeoJSON</a>
+        </div>
       </div>
       <div id="error" hidden></div>
       <div class="statusbar"><span id="status">loading…</span></div>
