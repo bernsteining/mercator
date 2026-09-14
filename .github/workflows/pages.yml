@@ -85,6 +85,10 @@ jobs:
           cp examples/data/logo.png docs/logo.png
           ls -la docs/data docs/logo.png
 
+      - name: Stamp build commit into the demo pill
+        shell: bash
+        run: sed -i "s/__BUILD_COMMIT__/${GITHUB_SHA::7}/g" docs/index.html
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

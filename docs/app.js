@@ -599,6 +599,22 @@ $("copy").addEventListener("click", async () => {
   catch { /* clipboard blocked */ }
 });
 
+// Click the "demo" pill to reveal the deployed commit (stamped by CI; "local"
+// when served from a working copy).
+{
+  const b = $("build");
+  if (b) {
+    b.style.cursor = "pointer";
+    let shown = false;
+    b.addEventListener("click", () => {
+      shown = !shown;
+      const c = b.dataset.commit;
+      const commit = c && !c.includes("BUILD_COMMIT") ? c : "local";
+      b.textContent = shown ? commit : "demo";
+    });
+  }
+}
+
 // ───────────────────────────── boot ─────────────────────────────────────────
 buildForm();
 (async () => {
