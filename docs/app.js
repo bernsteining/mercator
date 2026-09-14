@@ -491,7 +491,7 @@ function loadFileText(name, text) {
 const elMain = $("main");
 const elStage = document.querySelector(".preview-wrap");
 const pointers = new Map();
-let orbit = null, pinch = null;
+let orbit = null, pinch = null, pan = null;
 let view = null; // explicit projected viewbox [x, y, w, h], or null = auto-fit
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -508,7 +508,7 @@ function applyLiveView() {
   if (s && view) s.setAttribute("viewBox", view.map((n) => +n.toFixed(4)).join(" "));
 }
 function updateDragCursor() {
-  elStage.style.cursor = AZIMUTHAL.has(state.proj_type) ? "grab" : (view ? "move" : "default");
+  elStage.style.cursor = (AZIMUTHAL.has(state.proj_type) && !view) ? "grab" : "move";
 }
 // Screen point → current view coordinates (letterbox-aware, meet fit).
 function pxToView(cx, cy) {
@@ -549,11 +549,16 @@ elStage.addEventListener("pointerdown", (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   elStage.setPointerCapture(e.pointerId);
   if (pointers.size === 2) {
-    orbit = null; // second finger down → switch from orbit to pinch
+    orbit = pan = null; // second finger down → switch to pinch
     const [a, b] = [...pointers.values()];
     pinch = { d: dist(a, b), m: mid(a, b) };
-  } else if (pointers.size === 1 && AZIMUTHAL.has(state.proj_type)) {
-    orbit = { x: e.clientX, y: e.clientY, lon: state.center_lon, lat: state.center_lat };
+  } else if (pointers.size === 1) {
+    // Un-zoomed globe: drag orbits (rotate the projection). Otherwise drag pans the viewbox.
+    if (AZIMUTHAL.has(state.proj_type) && !view) {
+      orbit = { x: e.clientX, y: e.clientY, lon: state.center_lon, lat: state.center_lat };
+    } else {
+      pan = { x: e.clientX, y: e.clientY };
+    }
     elStage.style.cursor = "grabbing";
   }
   e.preventDefault();
@@ -577,12 +582,16 @@ elStage.addEventListener("pointermove", (e) => {
     setters.center_lat(state.center_lat);
     renderTypst();
     doRender();
+  } else if (pan && pointers.size === 1) {
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    pan = { x: e.clientX, y: e.clientY };
+    adjustView(e.clientX, e.clientY, 1, dx, dy); // translate the viewbox
   }
 });
 function liftPointer(e) {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) pinch = null;
-  if (pointers.size === 0) { orbit = null; updateDragCursor(); }
+  if (pointers.size === 0) { orbit = pan = null; updateDragCursor(); }
 }
 elStage.addEventListener("pointerup", liftPointer);
 elStage.addEventListener("pointercancel", liftPointer);
