@@ -143,8 +143,8 @@ const SCHEMA = [
     { k: "grat_opacity", label: "Opacity", t: "rng", def: 0.6, min: 0, max: 1, step: 0.05, when: (s) => s.grat_on },
     { k: "grat_width", label: "Width", t: "rng", def: 0.5, min: 0, max: 2, step: 0.1, when: (s) => s.grat_on },
   ] },
-  { title: "Sphere / ocean", when: (s) => AZIMUTHAL.has(s.proj_type), fields: [
-    { k: "sphere_on", label: "Enabled", t: "bool", def: false },
+  { title: "Sphere / ocean", fields: [
+    { k: "sphere_on", label: "Enabled (disc for globes, frame otherwise)", t: "bool", def: false },
     { k: "sphere_fill", label: "Ocean fill", t: "color", def: "#cfe8ff", when: (s) => s.sphere_on },
     { k: "sphere_stroke", label: "Outline", t: "color", def: "#3388cc", when: (s) => s.sphere_on },
     { k: "sphere_stroke_width", label: "Outline width", t: "rng", def: 0.005, min: 0, max: 0.05, step: 0.001, when: (s) => s.sphere_on },
@@ -257,13 +257,20 @@ function loadStateFromConfig(cfg) {
   if (p.latitude_of_origin != null) state.latitude_of_origin = p.latitude_of_origin;
   if (p.standard_parallel != null) state.standard_parallel = p.standard_parallel;
   if (Array.isArray(cfg.rotate)) { state.rot_l = cfg.rotate[0] || 0; state.rot_p = cfg.rotate[1] || 0; state.rot_g = cfg.rotate[2] || 0; }
-  if (cfg.fill === "none") state.fill_mode = "none";
+  // Templated / named colors the color picker can't represent are kept verbatim.
+  const isTemplate = (v) => typeof v === "string" && v.includes("{");
+  if (isTemplate(cfg.fill)) _extras.fill = cfg.fill;
+  else if (cfg.fill === "none") state.fill_mode = "none";
   else if (cfg.fill != null) { state.fill_mode = "color"; state.fill = toHex(cfg.fill); }
-  if (cfg.fill_opacity != null) state.fill_opacity = cfg.fill_opacity;
-  if (cfg.stroke === "none") state.stroke_mode = "none";
+  if (typeof cfg.fill_opacity === "number") state.fill_opacity = cfg.fill_opacity;
+  else if (isTemplate(cfg.fill_opacity)) _extras.fill_opacity = cfg.fill_opacity;
+  if (isTemplate(cfg.stroke)) _extras.stroke = cfg.stroke;
+  else if (cfg.stroke === "none") state.stroke_mode = "none";
   else if (cfg.stroke != null) { state.stroke_mode = "color"; state.stroke = toHex(cfg.stroke); }
-  if (cfg.stroke_width != null) state.stroke_width = cfg.stroke_width;
+  if (typeof cfg.stroke_width === "number") state.stroke_width = cfg.stroke_width;
+  else if (isTemplate(cfg.stroke_width)) _extras.stroke_width = cfg.stroke_width;
   if (cfg.point_color === "none") state.point_mode = "none";
+  else if (isTemplate(cfg.point_color)) _extras.point_color = cfg.point_color;
   else if (cfg.point_color != null) { state.point_mode = "custom"; state.point_color = toHex(cfg.point_color); }
   if (cfg.point_shape != null) state.point_shape = cfg.point_shape;
   if (cfg.point_radius != null) state.point_radius = cfg.point_radius;
@@ -416,12 +423,21 @@ const PRESETS = {
   "World — orthographic globe": { file: "data/world.json", config: { projection: { type: "orthographic", center_lat: 30, center_lon: 10 }, sphere: { fill: "#dcefff", stroke: "#9cc4e0", stroke_width: 0.004 }, fill: "steelblue", fill_opacity: 0.95, stroke: "white", stroke_width: 0.0015, graticule: { step: 15, color: "#ffffff", opacity: 0.55, width: 0.4 } } },
   "World — Robinson + graticule": { file: "data/world.json", config: { projection: { type: "robinson" }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.03, graticule: { step: 30, color: "#bbbbbb", opacity: 0.5, width: 0.3 } } },
   "World — antimeridian clip": { file: "data/world.json", config: { projection: { type: "equirectangular" }, antimeridian: true, fill: "#6fbf5f", stroke: "#356b2c", stroke_width: 0.04 } },
+  "World — Mollweide (ocean frame)": { file: "data/world.json", config: { projection: { type: "mollweide" }, sphere: { fill: "#dceefb", stroke: "#8899bb", stroke_width: 0.006 }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.008, graticule: { step: 20, color: "#ffffff", opacity: 0.7, width: 0.3 } } },
+  "World — Hammer, oblique (rotate)": { file: "data/world.json", config: { projection: { type: "hammer" }, rotate: [-60, -25, 0], sphere: { fill: "#dceefb", stroke: "#8899bb", stroke_width: 0.006 }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.008, graticule: { step: 20, color: "#ffffff", opacity: 0.7, width: 0.3 } } },
+  "World — Van der Grinten": { file: "data/world.json", config: { projection: { type: "van_der_grinten" }, sphere: { fill: "#dceefb", stroke: "#8899bb", stroke_width: 0.008 }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.006, graticule: { step: 30, color: "#ffffff", opacity: 0.7, width: 0.4 } } },
+  "World — clip to a region": { file: "data/world.json", config: { projection: { type: "equirectangular" }, fill: "#6fbf5f", stroke: "white", stroke_width: 0.03, graticule: { step: 20, color: "#cccccc", opacity: 0.5, width: 0.2 }, clip_extent: [-25, -75, 55, 40] } },
   "World — Tissot's indicatrix": { file: "data/world.json", config: { projection: { type: "mercator" }, fill: "none", stroke: "#aaaaaa", stroke_width: 0.01, graticule: { step: 30, color: "#dddddd", opacity: 0.4, width: 0.2 }, tissot: { step: 30, radius: 5, fill: "#ff0000", fill_opacity: 0.4 } } },
   "Sweden — choropleth + legend": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "quantize", scheme: "reds", n: 5 }, legend: { title: "color", pos: "bottom-left" }, stroke: "white", stroke_width: 0.02, point_color: "none" } },
+  "Sweden — categorical fill": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "category", scheme: "tableau10" }, legend: { title: "class", pos: "bottom-left" }, stroke: "white", stroke_width: 0.02, point_color: "none" } },
+  "Sweden — diverging + gradient legend": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "diverging", scheme: "rdbu", domain: [0, 4], midpoint: 2 }, legend: { title: "color", pos: "bottom-left" }, stroke: "white", stroke_width: 0.02, point_color: "none" } },
+  "Sweden — per-feature fill + patterns": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill: "{fill_color}", fill_pattern: "{pattern}", stroke: "white", stroke_width: 0.02, point_color: "none" } },
+  "Sweden — dashed borders + labels": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill: "#eef3f8", stroke: "#8899bb", stroke_width: 0.03, stroke_dash: "0.25 0.15", point_color: "none", label: "{name}", label_font_size: 0.32, label_halo: "white", label_halo_width: 0.12, label_collide: true } },
   "Sweden — Dorling cartogram": { file: "data/swedish_regions.json", config: { projection: { type: "mercator", central_meridian: 16 }, fill_scale: { property: "color", type: "quantize", scheme: "reds", n: 5 }, dorling: { property: "l_id", max_radius: 1.0, stroke: "white", stroke_width: 0.02 } } },
   "Points — hexbin density": { file: "data/points.geojson", config: { projection: { type: "mercator", central_meridian: 15 }, hexbin: { radius: 0.2, scheme: "ylorrd", n: 6, stroke: "white", stroke_width: 0.004 } } },
   "Points — density contours": { file: "data/points.geojson", config: { projection: { type: "mercator", central_meridian: 15 }, contour: { bandwidth: 6, n: 7, scheme: "viridis", stroke_width: 0.02 } } },
   "Cities — proportional symbols": { file: "data/cities.geojson", config: { projection: { type: "mercator" }, point_radius_scale: { property: "pop", max_radius: 1.2, min_radius: 0.1 }, point_color: "crimson", fill_opacity: 0.6, stroke: "white", stroke_width: 0.06, size_legend: { title: "population", pos: "bottom-right" }, label: "{name}", label_font_size: 0.5 } },
+  "Cities — star markers": { file: "data/cities.geojson", config: { projection: { type: "mercator" }, point_shape: "star", point_radius: 0.5, point_color: "crimson", stroke: "white", stroke_width: 0.05, label: "{name}", label_font_size: 0.4, label_halo: "white", label_halo_width: 0.1 } },
 };
 
 async function loadPreset(name) {
