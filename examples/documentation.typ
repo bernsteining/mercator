@@ -1093,15 +1093,15 @@ Two helpers build GeoJSON on the sphere, for flow maps and range rings. Each ret
 
 === Rectangular (`clip_extent`)
 
-`clip_extent: (lon0, lat0, lon1, lat1)` clips the rendered map to a geographic rectangle, cutting geometry against the box while keeping the projection's geometry. Here the polar extremes are trimmed — note the straight top and bottom edges where the clip cuts the continents.
+`clip_extent: (lon0, lat0, lon1, lat1)` crops the map to a geographic rectangle. The box is projected into the map's coordinate space, so it works under any projection; when no explicit `viewbox` is set, the view automatically frames (zooms to) the clipped region.
 
 ```example
 #render-map(world, (
     projection: (type: "equirectangular"),
     fill: "#6fbf5f", stroke: "white", stroke_width: 0.03,
-    graticule: (step: 20, color: "#ccc", opacity: 0.5),
-    clip_extent: (-179, -55, 179, 78),
-  ), width: 82%)
+    graticule: (step: 10, color: "#ccc", opacity: 0.5),
+    clip_extent: (-12, 34, 40, 72), // Europe
+  ), width: 75%)
 ```
 
 === Small-circle (`clip_angle`)

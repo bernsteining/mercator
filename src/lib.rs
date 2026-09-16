@@ -467,9 +467,48 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
         bounds.add(x + r, y + r);
     }
 
+    // clip_extent is a geographic (lon0, lat0, lon1, lat1) box. Project its
+    // outline into SVG space — sampling along the edges so curved projections are
+    // covered, not just the corners — to get an axis-aligned clip rectangle in the
+    // same coordinate space as the rendered geometry. Used for the clipPath and,
+    // when no explicit viewbox is given, to frame (zoom to) the clipped region.
+    let clip_rect = conf
+        .clip_extent
+        .map(|[x0, y0, x1, y1]| {
+            let (lon0, lat0) = (x0.min(x1), y0.min(y1));
+            let (lon1, lat1) = (x0.max(x1), y0.max(y1));
+            let steps = 32;
+            let (mut minx, mut miny) = (f64::INFINITY, f64::INFINITY);
+            let (mut maxx, mut maxy) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for i in 0..=steps {
+                let t = i as f64 / steps as f64;
+                let lon = lon0 + (lon1 - lon0) * t;
+                let lat = lat0 + (lat1 - lat0) * t;
+                for (l, p) in [(lon, lat0), (lon, lat1), (lon0, lat), (lon1, lat)] {
+                    let (px, py) = proj.project(l, p);
+                    if px.is_finite() && py.is_finite() {
+                        minx = minx.min(px);
+                        miny = miny.min(py);
+                        maxx = maxx.max(px);
+                        maxy = maxy.max(py);
+                    }
+                }
+            }
+            (minx, miny, maxx, maxy)
+        })
+        .filter(|&(minx, miny, maxx, maxy)| minx.is_finite() && maxx > minx && maxy > miny);
+
     let viewbox = conf.viewbox.unwrap_or_else(|| {
         let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
-        bounds.viewbox(padding)
+        // A geographic clip with no explicit viewbox frames the clipped region.
+        if let Some((minx, miny, maxx, maxy)) = clip_rect {
+            let mut b = BoundsAccumulator::new();
+            b.add(minx, miny);
+            b.add(maxx, maxy);
+            b.viewbox(padding)
+        } else {
+            bounds.viewbox(padding)
+        }
     });
 
     let mut svg = String::with_capacity(32768);
@@ -500,15 +539,15 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
         push_f64(&mut svg, r);
         svg.push_str(r#""/></clipPath>"#);
         true
-    } else if let Some([x0, y0, x1, y1]) = conf.clip_extent {
+    } else if let Some((minx, miny, maxx, maxy)) = clip_rect {
         svg.push_str(r#"<clipPath id="mclip"><rect x=""#);
-        push_f64(&mut svg, x0);
+        push_f64(&mut svg, minx);
         svg.push_str(r#"" y=""#);
-        push_f64(&mut svg, y0);
+        push_f64(&mut svg, miny);
         svg.push_str(r#"" width=""#);
-        push_f64(&mut svg, x1 - x0);
+        push_f64(&mut svg, maxx - minx);
         svg.push_str(r#"" height=""#);
-        push_f64(&mut svg, y1 - y0);
+        push_f64(&mut svg, maxy - miny);
         svg.push_str(r#""/></clipPath>"#);
         true
     } else {
