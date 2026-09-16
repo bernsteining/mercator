@@ -25,11 +25,18 @@
 #let world = read("data/world.json", encoding: none)
 #let world_no_ant = read("data/world_no_antartica.json", encoding: none)
 #let cities = read("data/cities.geojson", encoding: none)
+#let points = read("data/points.geojson", encoding: none)
 
 // --- Example helper ---
 // Show rule that displays a code block and executes it.
 
-#let doc-scope = ("render-map": render-map, "join": join, sweden: sweden, world: world, cities: cities)
+#let doc-scope = (
+  "render-map": render-map, "render-layers": render-layers,
+  "geo-arc": geo-arc, "geo-circle": geo-circle,
+  "join": join, "map-centroids": map-centroids, "map-bounds": map-bounds,
+  sweden: sweden, world: world, world_no_ant: world_no_ant,
+  cities: cities, points: points,
+)
 #let code-block(body) = block(
   width: 100%, inset: 8pt, radius: 3pt,
   fill: luma(245), stroke: 0.5pt + luma(200), body,
@@ -132,28 +139,52 @@ All rendering options are passed as a Typst dictionary. Every field is optional 
 
 #code-block(text(size: 7pt, raw(block: true, lang: "json", ```
 {
-  // --- Appearance ---
-  "stroke":       "black",     // string – "red", "#ff0000" for example
-  "stroke_width": 0.05,        // float – border thickness
-  "fill":         "white",     // string – "green", "#00ffbb" for example
-  "fill_opacity": 1.0,         // float – 0.0 to 1.0 (transparent⟶opaque)
-  "fill_pattern": null,        // "hatched" | "crosshatched" | "dotted"
-  "point_radius": null,        // float – defaults to stroke_width × 5
-  "point_color":  null,        // string – defaults to fill; "none" hides points
+  // --- Appearance --- ({property} = per-feature interpolation)
+  "stroke":       "black",   // color; "none" to hide. {property}
+  "stroke_width": 0.05,      // float, or "{property}" template
+  "fill":         "white",   // color; "none". {property}
+  "fill_opacity": 1.0,       // 0..1, or "{property}" template
+  "fill_pattern": null,      // "hatched"|"crosshatched"|"dotted". {property}
+  "stroke_dash":  null,      // SVG dash pattern, e.g. "0.25 0.15"
+  "point_radius": null,      // float – defaults to stroke_width × 5
+  "point_color":  null,      // color – defaults to fill; "none" hides points
+  "point_shape":  "circle",  // circle|square|diamond|triangle|cross|star
 
   // --- Labels ---
   "label":             null,    // "{name}", a line object, or an array of them
-  "label_color":       "black", // string
-  "label_font_size":   0.3,     // float
-  "label_font_family": "Arial", // string
+  "label_color":       "black",
+  "label_font_size":   0.3,
+  "label_font_family": "Arial",
+  "label_halo":        null,    // halo color drawn behind the text
+  "label_halo_width":  0.1,     // halo thickness
+  "label_collide":     false,   // drop overlapping labels
 
-  // --- Viewbox ---
-  "viewbox":         null,      // [x, y, width, height] – auto-computed if null
-  "viewbox_padding": 0.15,      // float – padding fraction around auto viewbox
+  // --- Data-driven / thematic ---
+  "fill_scale":         null,   // choropleth (see Choropleth)
+  "legend":             null,   // color-scale legend (see Choropleth)
+  "point_radius_scale": null,   // proportional symbols (see Proportional symbols)
+  "size_legend":        null,   // nested-circle size key (see Size legend)
+  "filter":             null,   // render only matching features (see Filtering)
 
-  "projection": null,           // object, see Projections section
-  "graticule": null,            // object, see Graticule section
-  "tissot": null                // object, see Tissot's Indicatrix section
+  // --- Aggregation ---
+  "hexbin":  null,   // hexagonal binning (see Density)
+  "contour": null,   // density isolines (see Density)
+  "dorling": null,   // Dorling cartogram (see Cartograms)
+
+  // --- Geometry / framing ---
+  "viewbox":         null,      // [x, y, width, height] – auto if null
+  "viewbox_padding": 0.15,      // padding fraction around the auto viewbox
+  "precision":       null,      // adaptive resampling step (none = off)
+  "clip_extent":     null,      // [lon0, lat0, lon1, lat1] rectangular clip
+  "clip_angle":      null,      // azimuthal small-circle clip, degrees
+
+  // --- Projection & overlays ---
+  "projection":   null,         // object (see Projections)
+  "rotate":       null,         // [lambda, phi, gamma] deg (non-azimuthal)
+  "graticule":    null,         // object (see Graticule)
+  "sphere":       null,         // ocean disc / frame (see Sphere)
+  "antimeridian": false,        // cut & re-stitch at ±180° (see Antimeridian)
+  "tissot":       null          // object (see Tissot's Indicatrix)
 }
 ```.text)))
 
@@ -841,6 +872,295 @@ Cylindrical projections have a seam at the ±180° antimeridian. Polygons that c
 
   )
 }
+
+#pagebreak()
+
+== Point shapes
+
+`point_shape` sets the marker glyph for `Point`/`MultiPoint` features: `circle` (default), `square`, `diamond`, `triangle`, `cross`, or `star`. Combine with `point_radius` and `point_color`.
+
+```example
+#render-map(sweden, (
+    fill: "#eef", stroke: "#88a", stroke_width: 0.02,
+    point_shape: "star", point_radius: 0.25,
+    point_color: "crimson",
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Dashed strokes
+
+`stroke_dash` sets an SVG dash pattern — a space-separated list of on/off lengths in map units — for administrative, disputed, or planned boundaries.
+
+```example
+#render-map(sweden, (
+    fill: "#f7fafc", stroke: "#557", stroke_width: 0.03,
+    stroke_dash: "0.25 0.15", point_color: "none",
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Label halos and collision
+
+`label_halo` draws a contrasting outline behind label text (via SVG `paint-order`), keeping it readable over busy fills; `label_halo_width` sets its thickness. `label_collide: true` drops labels that would overlap a already-placed one.
+
+```example
+#render-map(sweden, (
+    fill: "steelblue", fill_opacity: 0.8, stroke: "white",
+    stroke_width: 0.02, point_color: "none",
+    label: "{name}", label_color: "black", label_font_size: 0.22,
+    label_halo: "white", label_halo_width: 0.12,
+    label_collide: true,
+  ), width: 80%)
+```
+
+#pagebreak()
+
+== Filtering features
+
+`filter` renders only the features whose `property` satisfies every given condition: `eq` / `ne` (match any value), `in` (a list of values), or the numeric comparisons `gt` / `lt` / `gte` / `lte`. Conditions combine with logical AND.
+
+```example
+#render-map(sweden, (
+    filter: (property: "color", gte: 3),
+    fill: "seagreen", stroke: "white", stroke_width: 0.02,
+    point_color: "none",
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Scale types and color schemes
+
+Beyond `quantize` and `linear`, `fill_scale` supports `quantile` (equal-count bins), `threshold` (explicit break points via `domain`), and `diverging` (a two-hue ramp around a `midpoint`). Instead of an explicit `range`, name a built-in `scheme` with `n` classes:
+
+- *Sequential:* `blues`, `greens`, `oranges`, `reds`, `purples`, `greys`, `viridis`, `magma`, `ylgnbu`, `ylorrd`
+- *Diverging:* `rdbu`, `rdylbu`, `brbg`, `piyg`, `spectral`
+- *Categorical:* `category10`, `tableau10`, `set1`, `set2`, `dark2`
+
+```example
+#render-map(sweden, (
+    fill_scale: (property: "color", type: "quantile",
+      scheme: "viridis", n: 5),
+    stroke: "white", stroke_width: 0.02, point_color: "none",
+    legend: (title: "color", pos: "bottom-left"),
+  ), width: 70%)
+```
+
+A `diverging` scale automatically draws a continuous *gradient* legend:
+
+```example
+#render-map(sweden, (
+    fill_scale: (property: "color", type: "diverging",
+      scheme: "rdbu", domain: (0, 4), midpoint: 2),
+    stroke: "white", stroke_width: 0.02, point_color: "none",
+    legend: (title: "color", pos: "bottom-left"),
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Size legend
+
+`size_legend: (title, pos)` draws a nested-circle key for the active `point_radius_scale`, so readers can decode symbol areas back to values.
+
+```example
+#let combined = json.encode((type: "FeatureCollection",
+  features: json(bytes(sweden)).features
+    + json(bytes(cities)).features))
+#render-map(combined, (
+    projection: (type: "mercator"),
+    fill: "#e8e8e8", stroke: "white", stroke_width: 0.02,
+    point_radius_scale: (property: "pop",
+      max_radius: 1.2, min_radius: 0.1),
+    point_color: "crimson", fill_opacity: 0.7,
+    size_legend: (title: "population", pos: "bottom-right"),
+  ), width: 55%)
+```
+
+#pagebreak()
+
+== Density maps
+
+When points are too many to read individually, aggregate them. Both tools operate on `Point`/`MultiPoint` features in projected space.
+
+=== Hexagonal binning
+
+`hexbin` bins points into a hexagonal lattice and colors each cell by its count. Set `radius` (hex size in map units), a `scheme`, and `n` color classes.
+
+```example
+#render-map(points, (
+    projection: (type: "mercator", central_meridian: 15),
+    hexbin: (radius: 0.2, scheme: "ylorrd", n: 6,
+      stroke: "white", stroke_width: 0.004),
+  ), width: 70%)
+```
+
+#pagebreak()
+
+=== Contours
+
+`contour` estimates a smooth density surface (a kernel density estimate) and draws it as filled isolines via marching squares. `bandwidth` controls smoothness, `n` the number of levels, `scheme` the colors, and the optional `cell_size` the grid resolution.
+
+```example
+#render-map(points, (
+    projection: (type: "mercator", central_meridian: 15),
+    contour: (bandwidth: 6, n: 7, scheme: "viridis",
+      stroke_width: 0.02),
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Cartograms
+
+=== Dorling
+
+A *Dorling cartogram* replaces each feature with a circle sized by a numeric `property`, then nudges the circles apart so they don't overlap — trading exact geographic position for directly comparable symbol sizes. A `fill_scale` colors the circles; `max_radius`/`min_radius` bound their size and `iterations` the relaxation.
+
+```example
+#render-map(sweden, (
+    projection: (type: "mercator", central_meridian: 16),
+    fill_scale: (property: "color", type: "quantize",
+      scheme: "reds", n: 5),
+    dorling: (property: "l_id", max_radius: 1.0,
+      stroke: "white", stroke_width: 0.02),
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Layers
+
+`render-layers` overlays several GeoJSON sources on one shared projection and viewbox (the union of their projected bounds), each with its own config — a basemap plus data overlays and points that all line up. Layers draw back-to-front (first = bottom). Put a `graticule`, `sphere`, or `legend` on whichever layer should carry it.
+
+```example
+#render-layers((
+    (data: sweden, fill: "#eef3f8", stroke: "#8fa8c8",
+     stroke_width: 0.02),
+    (data: cities, point_color: "crimson", point_radius: 0.18,
+     stroke: "white", stroke_width: 0.04,
+     label: "{name}", label_font_size: 0.3),
+  ), projection: (type: "mercator", central_meridian: 16),
+  width: 65%)
+```
+
+#pagebreak()
+
+== Great-circle geometry
+
+Two helpers build GeoJSON on the sphere, for flow maps and range rings. Each returns a `Feature`; collect several into a `FeatureCollection` and draw them (here as an overlay via `render-layers`).
+
+=== Arcs
+
+`geo-arc(from, to)` returns the great-circle (shortest) path between two `(lon, lat)` points, interpolated on the sphere so it curves correctly under any projection.
+
+```example
+#let hub = (18.07, 59.33) // Stockholm
+#let dests = ((-74, 40.7), (139.7, 35.7), (151.2, -33.9))
+#let arcs = json.encode((type: "FeatureCollection",
+  features: dests.map(d => geo-arc(hub, d))))
+#render-layers((
+    (data: world, fill: "#eee", stroke: "#ccc", stroke_width: 0.01),
+    (data: arcs, fill: "none", stroke: "crimson", stroke_width: 0.06),
+  ), projection: (type: "natural_earth"), width: 95%)
+```
+
+#pagebreak()
+
+=== Circles and range rings
+
+`geo-circle(center, radius)` returns a polygon approximating a circle of a given *angular* radius (degrees) around a point — e.g. `500 / 111.32` for roughly 500 km.
+
+```example
+#let center = (10, 50)
+#let rings = json.encode((type: "FeatureCollection",
+  features: (500, 1500, 3000).map(km =>
+    geo-circle(center: center, radius: km / 111.32))))
+#render-layers((
+    (data: world, fill: "#eef", stroke: "#ccd", stroke_width: 0.01),
+    (data: rings, fill: "none", stroke: "darkred",
+     stroke_width: 0.05),
+  ), projection: (type: "orthographic",
+    center_lat: 45, center_lon: 10), width: 55%)
+```
+
+#pagebreak()
+
+== Clipping
+
+=== Rectangular (`clip_extent`)
+
+`clip_extent: (lon0, lat0, lon1, lat1)` clips the rendered map to a geographic rectangle, cutting geometry against the box while keeping the projection's geometry. Here the polar extremes are trimmed — note the straight top and bottom edges where the clip cuts the continents.
+
+```example
+#render-map(world, (
+    projection: (type: "equirectangular"),
+    fill: "#6fbf5f", stroke: "white", stroke_width: 0.03,
+    graticule: (step: 20, color: "#ccc", opacity: 0.5),
+    clip_extent: (-179, -55, 179, 78),
+  ), width: 82%)
+```
+
+=== Small-circle (`clip_angle`)
+
+On an azimuthal projection, `clip_angle` (degrees) clips to a small circle around the projection center — useful for local or hemispheric views.
+
+```example
+#render-map(world, (
+    projection: (type: "azimuthal_equidistant",
+      center_lat: 45, center_lon: 10),
+    fill: "#6fbf5f", stroke: "#356b2c", stroke_width: 0.01,
+    graticule: (step: 15, color: "#ccc", opacity: 0.5),
+    clip_angle: 40,
+  ), width: 55%)
+```
+
+#pagebreak()
+
+== Rotation
+
+`rotate: (lambda, phi, gamma)` applies a full three-axis spherical rotation (à la `d3.geoRotation`) *before* projecting, letting you re-center or tilt any non-azimuthal projection — for oblique aspects. (Azimuthal projections use `center_lat`/`center_lon` instead.)
+
+```example
+#render-map(world, (
+    projection: (type: "hammer"),
+    rotate: (-60, -25, 0),
+    fill: "#6fbf5f", stroke: "white", stroke_width: 0.008,
+    sphere: (fill: "#dceefb", stroke: "#8899bb",
+      stroke_width: 0.006),
+    graticule: (step: 20, color: "#fff", opacity: 0.7, width: 0.3),
+  ), width: 80%)
+```
+
+#pagebreak()
+
+== Adaptive resampling
+
+`precision` subdivides long line/polygon segments so that straight edges follow the projection's curvature — most visible on curved projections and graticules. It is the resampling threshold in projected units; smaller is finer, `none` (the default) is off. Clipped and azimuthal paths are already re-stitched, so this mainly refines unclipped geometry.
+
+```example
+#render-map(world, (
+    projection: (type: "orthographic",
+      center_lat: 20, center_lon: 0),
+    precision: 0.01,
+    fill: "steelblue", stroke: "white", stroke_width: 0.002,
+    graticule: (step: 15, color: "#fff", opacity: 0.5),
+  ), width: 55%)
+```
+
+#pagebreak()
+
+== Measurements
+
+Two helpers return geometry in the same projected coordinate space as the rendered SVG and its `viewbox`, so you can place your own Typst content over a map or frame it precisely.
+
+- `map-bounds(code, projection: ..)` → the projected bounds `(x, y, w, h)` of a source. `render-layers` uses it internally to align layers; it is also handy for computing a shared `viewbox` yourself.
+- `map-centroids(code, projection: ..)` → an array with each feature's projected centroid `(x, y)` (or `none`), for placing custom markers or labels at feature centers.
+
+#code-block(text(size: 7pt, raw(block: true, lang: "typst", "#let proj = (type: \"mercator\", central_meridian: 16)\n#let (x, y, w, h) = map-bounds(sweden, projection: proj)\n#let centers = map-centroids(sweden, projection: proj)\n// centers.at(0) == (cx, cy) of the first feature, in viewbox units")))
 
 #pagebreak()
 

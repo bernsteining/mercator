@@ -2,7 +2,7 @@
 name = "mercator"
 version = "0.1.2"
 entrypoint = "mercator.typ"
-authors = ["Bernstein <https://github.com/bernsteining>"]
+authors = ["bernsteining <https://github.com/bernsteining>"]
 license = "MIT"
 description = "🌎 Render GeoJSON and TopoJSON in typst."
 repository = "https://github.com/bernsteining/mercator/"
