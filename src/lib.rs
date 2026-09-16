@@ -28,7 +28,7 @@ use geometry::{push_f64, render_geometry, BoundsAccumulator, Centroid, RenderOut
 use label::{build_labels, write_label};
 use pattern::{write_fill, PatternDefs};
 use projection::Proj;
-use style::{resolve_style, GraticuleConfig, LabelInstance, ResolvedStyle, StyleConfig};
+use style::{resolve_style, FilterConfig, GraticuleConfig, LabelInstance, ResolvedStyle, StyleConfig};
 
 initiate_protocol!();
 
@@ -83,6 +83,7 @@ fn render_feature(
     out: &mut RenderOutput,
     proj: &Proj,
     bounds: &mut BoundsAccumulator,
+    fit: Option<(&FilterConfig, &mut BoundsAccumulator)>,
     hex_points: Option<&mut Vec<(f64, f64)>>,
     dorling_out: Option<&mut Vec<(f64, f64, f64, String)>>,
 ) {
@@ -115,6 +116,16 @@ fn render_feature(
     if let Some(filter) = &config.filter {
         if !filter.matches(properties) {
             return;
+        }
+    }
+
+    // Fit framing: accumulate the projected bounds of features matching the fit
+    // selector into a separate accumulator (the feature is still drawn below).
+    if let Some((selector, fit_bounds)) = fit {
+        if selector.matches(properties) {
+            let mut fout = RenderOutput { precision: out.precision, ..Default::default() };
+            let mut fc = Centroid::new();
+            render_geometry(&mut fout, geom, proj, fit_bounds, &mut fc, false, clip);
         }
     }
 
@@ -403,6 +414,8 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
     // When a Dorling cartogram is on, features become circles collected here.
     let want_dorling = conf.dorling.is_some();
     let mut dorling_pts: Vec<(f64, f64, f64, String)> = Vec::new();
+    // fit: projected bounds of features matching the fit selector (view framing).
+    let mut fit_bounds = BoundsAccumulator::new();
 
     // Single pass: render features with on-the-fly projection, accumulating bounds + centroids.
     // The color scale (choropleth) is built first — it may pre-scan properties for its domain —
@@ -421,13 +434,15 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
                 for feat in features {
                     let hp = if want_hex { Some(&mut hex_points) } else { None };
                     let dp = if want_dorling { Some(&mut dorling_pts) } else { None };
-                    render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds, hp, dp);
+                    let ft = conf.fit.as_ref().map(|f| (&f.selector, &mut fit_bounds));
+                    render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds, ft, hp, dp);
                 }
             }
             GeoJson::Feature(feat) => {
                 let hp = if want_hex { Some(&mut hex_points) } else { None };
                 let dp = if want_dorling { Some(&mut dorling_pts) } else { None };
-                render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds, hp, dp);
+                let ft = conf.fit.as_ref().map(|f| (&f.selector, &mut fit_bounds));
+                render_feature(&mut geo_buf, feat, &mut labels, &conf, scale.as_ref(), size.as_ref(), clip.as_ref(), &mut patterns, &mut out, &proj, &mut bounds, ft, hp, dp);
             }
             GeoJson::Geometry(geom) => {
                 let style = resolve_style(&conf, None);
@@ -500,6 +515,12 @@ pub fn geo(geojson: &[u8], config: &[u8]) -> Result<Vec<u8>, String> {
 
     let viewbox = conf.viewbox.unwrap_or_else(|| {
         let padding = conf.viewbox_padding.unwrap_or(DEFAULT_VIEWBOX_PADDING);
+        // fitExtent/fitSize: frame the subset selected by `fit` (if any matched).
+        if let Some(fit) = &conf.fit {
+            if fit_bounds.is_valid() {
+                return fit_bounds.viewbox(fit.padding.unwrap_or(padding));
+            }
+        }
         // A geographic clip with no explicit viewbox frames the clipped region.
         if let Some((minx, miny, maxx, maxy)) = clip_rect {
             let mut b = BoundsAccumulator::new();

@@ -165,6 +165,7 @@ All rendering options are passed as a Typst dictionary. Every field is optional 
   "point_radius_scale": null,   // proportional symbols (see Proportional symbols)
   "size_legend":        null,   // nested-circle size key (see Size legend)
   "filter":             null,   // render only matching features (see Filtering)
+  "fit":                null,   // frame the view to a subset (see Fit to a region)
 
   // --- Aggregation ---
   "hexbin":  null,   // hexagonal binning (see Density)
@@ -927,6 +928,24 @@ Cylindrical projections have a seam at the ±180° antimeridian. Polygons that c
     filter: (property: "color", gte: 3),
     fill: "seagreen", stroke: "white", stroke_width: 0.02,
     point_color: "none",
+  ), width: 70%)
+```
+
+#pagebreak()
+
+== Fit to a region
+
+`fit` frames the view on the subset of features matching a selector — the equivalent of d3-geo's `fitExtent` / `fitSize`, but chosen by property rather than by passing a geometry. Every feature is still drawn (so the focus keeps its surrounding context); the viewbox is set to the projected bounds of the matching features, with optional `padding`. Use the same conditions as `filter` (`eq` / `ne` / `in` / `gt` / `lt` / `gte` / `lte`). An explicit `viewbox` overrides it.
+
+To draw *only* a subset instead, use `filter` — the view already fits whatever is drawn.
+
+```example
+#render-map(sweden, (
+    fill: "#dfe7f0", stroke: "#8fa8c8", stroke_width: 0.02,
+    point_color: "none",
+    fit: (property: "l_id", "in": (1, 4, 5, 6), padding: 0.08),
+    label: "{name}", label_font_size: 0.22,
+    label_halo: "white", label_halo_width: 0.1,
   ), width: 70%)
 ```
 

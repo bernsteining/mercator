@@ -45,6 +45,12 @@ impl BoundsAccumulator {
         self.max_y = self.max_y.max(y);
     }
 
+    /// True once at least one point has been added (bounds are usable).
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.min_x != f64::INFINITY
+    }
+
     pub fn viewbox(&self, padding: f64) -> (f64, f64, f64, f64) {
         if self.min_x == f64::INFINITY {
             return (0.0, 0.0, 100.0, 100.0);

@@ -57,12 +57,14 @@ Check [examples/documentation.pdf](https://github.com/bernsteining/mercator/blob
 | `graticule` | object | none | Graticule overlay config (see below) |
 | `tissot` | object | none | Tissot's indicatrix overlay config (see below) |
 | `sphere` | object | none | Filled globe/ocean disc for azimuthal projections (see below); hemisphere clipping is automatic and needs no config |
-| `clip_extent` | array | none | Clip rendered geometry to a projected-space rectangle `(x0, y0, x1, y1)` |
+| `clip_extent` | array | none | Crop the map to a geographic rectangle `(lon0, lat0, lon1, lat1)`. Projected into map space (works under any projection); with no explicit `viewbox`, the view auto-frames the cropped region. |
 | `clip_angle` | float | none | Clip an azimuthal map to a small circle of this angular radius (degrees) |
 | `antimeridian` | bool | `false` | Clip polygons at the antimeridian (cylindrical projections) so seam-crossing shapes (e.g. Antarctica) close cleanly instead of streaking (see below) |
 | `hexbin` | object | none | Aggregate Point/MultiPoint features into a hexagonal density grid — `(radius, scheme?, n?, stroke?, stroke_width?)`. Cells are colored by point count. |
 | `dorling` | object | none | Dorling cartogram: replace each feature with a circle sized by a numeric property, placed near its centroid with collision repulsion — `(property, max_radius, min_radius?, domain?, iterations?, stroke?, stroke_width?)`. Circle fill comes from the resolved `fill` (so `fill_scale` colors them). |
 | `contour` | object | none | Density contours of Point/MultiPoint features (KDE + marching squares) — `(cell_size?, bandwidth?, n?, scheme?, stroke_width?)`. Iso-lines colored by level. |
+| `filter` | object | none | Render only features whose `property` matches — `(property, eq?, ne?, in?, gt?, lt?, gte?, lte?)`; conditions combine with logical AND. |
+| `fit` | object | none | Frame the view to the subset of features matching a selector (all features are still drawn) — like d3-geo's fitExtent/fitSize. Same conditions as `filter`, plus `padding?`. Overridden by an explicit `viewbox`. |
 | `fill_scale` | object | none | Data-driven fill from a numeric property, i.e. a choropleth (see below) |
 | `point_radius_scale` | object | none | Data-driven point size from a numeric property, i.e. proportional symbols (see below) |
 | `legend` | object | none | Legend key for the active `fill_scale` (discrete swatches, or a gradient bar for `linear`/`diverging`) — `(title?, pos)` |

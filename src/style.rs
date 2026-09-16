@@ -164,6 +164,21 @@ impl FilterConfig {
     }
 }
 
+/// Fit (frame) the map to a chosen subset of features — the equivalent of
+/// d3-geo's `fitExtent`/`fitSize`, but selecting the subset by property instead
+/// of passing a geometry. Every feature is still drawn (so the focus keeps its
+/// geographic context); the viewbox is set to the projected bounds of the
+/// features matching `selector`. Ignored when an explicit `viewbox` is given.
+/// (To draw *only* the subset, use `filter` instead — the auto-viewbox already
+/// fits to whatever is drawn.)
+#[derive(Debug, Deserialize)]
+pub struct FitConfig {
+    #[serde(flatten)]
+    pub selector: FilterConfig,
+    /// Padding fraction around the fitted bounds (default: `viewbox_padding`).
+    pub padding: Option<f64>,
+}
+
 fn default_stroke() -> String { "black".to_string() }
 fn default_stroke_width() -> NumOrTemplate { NumOrTemplate::Num(0.05) }
 fn default_fill() -> String { "white".to_string() }
@@ -233,6 +248,9 @@ pub struct StyleConfig {
     pub label: Option<LabelConfig>,
     /// Only render features whose properties match this filter.
     pub filter: Option<FilterConfig>,
+    /// Frame the view to the subset of features matching this selector (all
+    /// features are still drawn). Like d3-geo's fitExtent/fitSize.
+    pub fit: Option<FitConfig>,
     pub point_radius: Option<f64>,
     pub point_color: Option<String>,
     /// Marker shape for Point/MultiPoint: `circle` (default), `square`,
@@ -348,6 +366,7 @@ impl Default for StyleConfig {
             label_collide: false,
             label: None,
             filter: None,
+            fit: None,
             rotate: None,
             precision: None,
             point_radius: None,
